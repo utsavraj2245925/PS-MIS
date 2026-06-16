@@ -1,35 +1,36 @@
 import express from "express";
 import cors from "cors";
+import dotenv from "dotenv";
+
+
+import connectDB from "./config/db.js";
+import partRoutes from "./routes/partRoutes.js";
+
+dotenv.config();
+
+// Connect MongoDB
+connectDB();
 
 const app = express();
 
-
+// Middleware
 app.use(express.json());
 
-app.use(cors({
-    origin: "http://localhost:5173", // Replace with your frontend's URL
+app.use(
+  cors({
+    origin: ["http://localhost:5173", "https://hoppscotch.io"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type"],
-}));
+  })
+);
 
 
-app.get("/", (req, res) => {
-     res.send("Hello World");
-    })
 
-  
+app.use("/api", partRoutes);
 
-app.get("/api/parts", (req, res, next) => {
-    const parts = [
-        { id: 1, name: "Part A", area: "Area 1", partsPerHanger: 5, status: "Active" },
-        { id: 2, name: "Part B", area: "Area 2", partsPerHanger: 10, status: "Inactive" },
-    ];
+// Server Start
+const PORT = process.env.PORT || 4000;
 
-    res.json(parts);
+app.listen(PORT, () => {
+  console.log(`Server Running On Port ${PORT}`);
 });
-
-
-app.listen(4000, function(){
-    console.log("Server is running on port 4000");
-})
-

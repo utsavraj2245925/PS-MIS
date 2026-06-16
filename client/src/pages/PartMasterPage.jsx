@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import axios from "axios";
 
 export default function PartMasterPage() {
   const [model, setModel] = useState("");
@@ -6,48 +7,32 @@ export default function PartMasterPage() {
   const [area, setArea] = useState("");
   const [partsPerHanger, setPartsPerHanger] = useState("");
   const [status, setStatus] = useState("Active");
+  const backendUrl = import.meta.env.VITE_API_URI;
 
   const [filterModel, setFilterModel] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
 
   const [editId, setEditId] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
-  const [partData, setPartData] = useState([
-    {
-      id: 1,
-      model: '20"',
-      partName: "Front Panel",
-      area: 450,
-      partsPerHanger: 12,
-      status: "Active",
-    },
-    {
-      id: 2,
-      model: '20"',
-      partName: "Top Cover",
-      area: 320,
-      partsPerHanger: 10,
-      status: "Active",
-    },
-    {
-      id: 3,
-      model: '22"',
-      partName: "Side RH",
-      area: 280,
-      partsPerHanger: 8,
-      status: "Active",
-    },
-    {
-      id: 4,
-      model: '26"',
-      partName: "Base",
-      area: 510,
-      partsPerHanger: 6,
-      status: "Active",
-    },
-  ]);
+  const [partData, setPartData] = useState([]);
+
+  const fetchParts = async () => {
+      try {
+        const response = await axios.get(`${backendUrl}/parts`);
+        setPartData(response.data);
+      } catch (error) {
+        console.error("Error fetching parts:", error);
+        alert("Error fetching parts");
+      }
+    };
+  useEffect(() => {
+  fetchParts();
+}, []);
 
   const resetForm = () => {
     setModel("");
@@ -58,14 +43,20 @@ export default function PartMasterPage() {
     setEditId(null);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (window.confirm("Delete this part?")) {
-      setPartData(partData.filter((part) => part.id !== id));
+      try {
+        await axios.delete(`${backendUrl}/parts/${id}`);
+        fetchParts(); // Refresh the part list after deletion
+      } catch (error) {
+        console.error("Error deleting part:", error);
+        alert("Error deleting part");
+      }
     }
   };
 
   const handleEdit = (part) => {
-    setEditId(part.id);
+    setEditId(part._id);
 
     setModel(part.model);
     setPartName(part.partName);
@@ -76,64 +67,87 @@ export default function PartMasterPage() {
     setShowModal(true);
   };
 
-  const handleSavePart = () => {
+  const handleSavePart = async () => {
     if (!model || !partName) {
       alert("Please fill required fields");
       return;
     }
 
     const newPart = {
-      id: Date.now(),
       model,
       partName,
       area,
       partsPerHanger,
       status,
-    };
+    };  
 
-    setPartData([...partData, newPart]);
-
-    resetForm();
+    try {
+      const response = await axios.post(`${backendUrl}/parts`, newPart);
+      resetForm();
+      console.log("Part created successfully:", response.data);
+      fetchParts(); // Refresh the part list after adding a new part
+    } catch (error) {
+      console.error("Error creating part:", error);
+      alert("Error creating part");
+    }
   };
 
-  const handleUpdatePart = () => {
-    const updated = partData.map((part) =>
-      part.id === editId
-        ? {
-            ...part,
-            model,
-            partName,
-            area,
-            partsPerHanger,
-            status,
-          }
-        : part
-    );
+  const handleUpdatePart = async () => {
+    
+  const response = await axios.put(`${backendUrl}/parts/${editId}`, {
+      model,
+      partName,
+      area,
+      partsPerHanger,
+      status,
+    });
 
-    setPartData(updated);
+    setPartData( prev => prev.map(p => p._id === editId ? response.data : p));
     setShowModal(false);
     resetForm();
   };
 
-  const filteredParts = partData.filter((part) => {
-    const matchesSearch =
-      part.partName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      part.model.toLowerCase().includes(searchTerm.toLowerCase());
+function Debaunce(func, delay) {
+  let timeoutId;
+  return function(...args) {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      func(...args);
+    }, delay);
+  }
+}
 
-    const matchesModel =
-      filterModel === "All" ||
-      part.model === filterModel;
 
-    const matchesStatus =
-      filterStatus === "All" ||
-      part.status === filterStatus;
 
-    return (
-      matchesSearch &&
-      matchesModel &&
-      matchesStatus
-    );
-  });
+  useEffect(() => {
+    Debaunce(handleFilterParts, 500)();
+  }, []);
+
+  const handleFilterParts = async () => {
+    try {
+      setIsLoading(true);
+      console.log("func is running...");
+      const params = {};
+      if (filterModel !== "All") params.model = filterModel;
+      if (filterStatus !== "All") params.status = filterStatus;
+
+      const response = await axios.get(`${backendUrl}/parts/filter`, { params:{
+        model: filterModel !== "All" ? filterModel : undefined,
+        status: filterStatus !== "All" ? filterStatus : undefined,
+        partName: searchTerm || undefined,
+      } });
+      setPartData(response.data);
+    } catch (error) {
+      console.error("Error filtering parts:", error);
+      alert("Error filtering parts");
+    }finally {      
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    Debaunce(handleFilterParts, 500)();
+  }, [searchTerm, filterModel, filterStatus]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
@@ -304,7 +318,7 @@ export default function PartMasterPage() {
             <div>
 
               <h2 className="text-2xl font-bold text-slate-800">
-                Part List
+                Part List  {isLoading && <span className="text-sm text-blue-500">Loading...</span>}
               </h2>
 
               <p className="text-slate-500 mt-1">
@@ -388,12 +402,12 @@ export default function PartMasterPage() {
 
               <tbody>
 
-                {filteredParts.length > 0 ? (
+                {partData.length > 0 ? (
 
-                  filteredParts.map((part) => (
+                  partData.map((part) => (
 
                     <tr
-                      key={part.id}
+                      key={part._id}
                       className="border-t hover:bg-slate-50 transition"
                     >
 
@@ -437,7 +451,7 @@ export default function PartMasterPage() {
                         </button>
 
                         <button
-                          onClick={() => handleDelete(part.id)}
+                          onClick={() => handleDelete(part._id)}
                           className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl transition"
                         >
                           Delete
