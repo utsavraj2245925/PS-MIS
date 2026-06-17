@@ -1,18 +1,33 @@
+import { useState } from "react";
 import Navbar from "../components/Navbar";
 import Sidebar from "../components/Sidebar";
 
 export default function DashboardLayout({ children }) {
+
+  const [collapsed, setCollapsed] = useState(false);
+
   return (
-    <div className="min-h-screen bg-slate-100">
-      <Navbar />
+    <div className="bg-slate-100 min-h-screen">
 
-      <div className="flex">
-        <Sidebar />
+      <Sidebar
+        collapsed={collapsed}
+        setCollapsed={setCollapsed}
+      />
 
-        <main className="flex-1 p-6">
+      <div
+        className={`transition-all duration-300 ${
+          collapsed ? "ml-20" : "ml-64"
+        }`}
+      >
+
+        <Navbar collapsed={collapsed} />
+
+        <main className="pt-24 p-6">
           {children}
         </main>
+
       </div>
+
     </div>
   );
 }

@@ -1,44 +1,99 @@
-export default function Sidebar() {
+import { Link } from "react-router-dom";
+
+export default function Sidebar({
+  collapsed,
+  setCollapsed,
+}) {
   return (
-    <aside className="w-64 min-h-screen bg-slate-900 text-white">
-      <div className="p-5 border-b border-slate-700">
-        <h2 className="text-xl font-bold">Paint Shop MIS</h2>
+    <aside
+      className={`fixed left-0 top-0 h-screen bg-slate-900 text-white transition-all duration-300 z-50 ${
+        collapsed ? "w-20" : "w-64"
+      }`}
+    >
+
+      <div className="p-4 flex justify-between items-center border-b border-slate-700">
+
+        {!collapsed && (
+          <h2 className="font-bold text-lg">
+            Paint Shop MIS
+          </h2>
+        )}
+
+        <button
+          onClick={() =>
+            setCollapsed(!collapsed)
+          }
+          className="text-xl"
+        >
+          ☰
+        </button>
+
       </div>
 
-      <nav className="p-4">
-        <ul className="space-y-2">
+      <nav className="mt-4">
 
-          <li className="px-4 py-3 rounded-lg hover:bg-slate-800 cursor-pointer">
-            Dashboard
-          </li>
+        <ul className="space-y-2 px-2">
 
-          <li className="px-4 py-3 rounded-lg hover:bg-slate-800 cursor-pointer">
-            Plant Master
-          </li>
+          <Link to="/">
+            <li className="hover:bg-slate-800 rounded-lg p-3">
+              📊 {!collapsed && "Dashboard"}
+            </li>
+          </Link>
 
-          <li className="px-4 py-3 rounded-lg hover:bg-slate-800 cursor-pointer">
-            Model Master
-          </li>
+          <Link to="/plant-master">
+            <li className="hover:bg-slate-800 rounded-lg p-3">
+              🏭 {!collapsed && "Plant Master"}
+            </li>
+          </Link>
 
-          <li className="px-4 py-3 rounded-lg hover:bg-slate-800 cursor-pointer">
-            Part Master
-          </li>
+          <Link to="/model-master">
+            <li className="hover:bg-slate-800 rounded-lg p-3">
+              📦 {!collapsed && "Model Master"}
+            </li>
+          </Link>
 
-          <li className="px-4 py-3 rounded-lg hover:bg-slate-800 cursor-pointer">
-            User Master
-          </li>
+          <Link to="/part-master">
+            <li className="hover:bg-slate-800 rounded-lg p-3">
+              🧩 {!collapsed && "Part Master"}
+            </li>
+          </Link>
 
+          <Link to="/user-master">
+            <li className="hover:bg-slate-800 rounded-lg p-3">
+              👤 {!collapsed && "User Master"}
+            </li>
+          </Link>
 
-          <li className="px-4 py-3 rounded-lg hover:bg-slate-800 cursor-pointer">
-            Reports
-          </li>
-
-          <li className="px-4 py-3 rounded-lg hover:bg-slate-800 cursor-pointer">
-            Settings
-          </li>
+          <Link to="/production-entry">
+            <li className="hover:bg-slate-800 rounded-lg p-3">
+              🏗 {!collapsed && "Production Entry"}
+            </li>
+          </Link>
 
         </ul>
+
+        <div className="border-t border-slate-700 mt-6 pt-6">
+
+          <ul className="space-y-2 px-2">
+
+            <li className="hover:bg-slate-800 rounded-lg p-3">
+              ✅ {!collapsed && "Quality Inspection"}
+            </li>
+
+            <li className="hover:bg-slate-800 rounded-lg p-3">
+              📈 {!collapsed && "Reports & Analysis"}
+            </li>
+
+            <li className="hover:bg-slate-800 rounded-lg p-3">
+              ⚙️ {!collapsed && "Settings"}
+            </li>
+
+          </ul>
+
+        </div>
+
       </nav>
+
     </aside>
   );
 }

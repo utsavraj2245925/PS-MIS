@@ -1,8 +1,12 @@
 import logo from "../assets/logo/pg-logo.png";
 
-export default function Navbar() {
+export default function Navbar({ collapsed }) {
   return (
-    <header className="bg-white shadow-sm px-6 py-4 flex items-center justify-between">
+    <header
+      className={`fixed top-0 right-0 bg-white shadow-sm px-6 py-4 flex items-center justify-between z-50 transition-all duration-300 ${
+        collapsed ? "left-20" : "left-64"
+      }`}
+    >
 
       <div className="flex items-center gap-3">
         <img

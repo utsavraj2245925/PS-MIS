@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 
 import connectDB from "./config/db.js";
 import partRoutes from "./routes/partRoutes.js";
-
+import modelRoutes from "./routes/modelRoutes.js";
 dotenv.config();
 
 // Connect MongoDB
@@ -24,9 +24,14 @@ app.use(
   })
 );
 
+// Routes
 
+app.use("/api", modelRoutes);
 
 app.use("/api", partRoutes);
+
+
+
 
 // Server Start
 const PORT = process.env.PORT || 4000;
@@ -34,3 +39,4 @@ const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Server Running On Port ${PORT}`);
 });
+
