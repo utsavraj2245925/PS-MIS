@@ -13,6 +13,7 @@
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/ibm-plex-sans": "^5.2.8",
     "@tailwindcss/vite": "^4.3.0",
+    "antd": "^6.4.4",
     "axios": "^1.18.0",
     "lucide-react": "^1.21.0",
     "react": "^19.2.6",

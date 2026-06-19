@@ -7,6 +7,7 @@ import connectDB from "./config/db.js";
 import partRoutes from "./routes/partRoutes.js";
 import modelRoutes from "./routes/modelRoutes.js";
 import plantRoutes from "./routes/plantRoute.js";
+import userRoutes from "./routes/userRoute.js";
 dotenv.config();
 
 // Connect MongoDB
@@ -32,6 +33,8 @@ app.use("/api", modelRoutes);
 app.use("/api", partRoutes);
 
 app.use("/api", plantRoutes);
+
+app.use("/api", userRoutes);
 
 
 

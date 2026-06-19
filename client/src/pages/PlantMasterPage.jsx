@@ -8,23 +8,12 @@ import {
   Search,
   Plus,
   Download,
-  Hash,
-  MapPin,
-  User,
-  Ruler,
-  Gauge,
-  Layers,
-  Package,
-  Clock,
-  Percent,
-  RotateCw,
-  Activity,
-  TrendingUp,
   CheckCircle2,
   XCircle,
   Pencil,
   Trash2,
   X,
+  Activity,
 } from "lucide-react";
 
 import {
@@ -35,7 +24,6 @@ import {
 } from "../services/plantService";
 
 export default function PlantMasterPage() {
-
   /* ===================================
       STATES
   =================================== */
@@ -56,6 +44,9 @@ export default function PlantMasterPage() {
     useState(null);
 
   const [isModalOpen, setIsModalOpen] =
+    useState(false);
+
+  const [isFormModalOpen, setIsFormModalOpen] =
     useState(false);
 
   const [editingId, setEditingId] =
@@ -216,6 +207,7 @@ export default function PlantMasterPage() {
     });
 
     setEditingId(null);
+    setIsFormModalOpen(false);
   };
 
   /* ===================================
@@ -289,7 +281,6 @@ export default function PlantMasterPage() {
         await fetchPlants();
 
         resetForm();
-
       } catch (error) {
         alert(
           error?.response?.data
@@ -299,14 +290,13 @@ export default function PlantMasterPage() {
       }
     };
 
-  /* ===================================
+      /* ===================================
       EDIT
   =================================== */
 
   const handleEdit = (
     plant
   ) => {
-
     setEditingId(
       plant._id
     );
@@ -347,10 +337,9 @@ export default function PlantMasterPage() {
         "Active",
     });
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
+    setIsFormModalOpen(
+      true
+    );
   };
 
   /* ===================================
@@ -359,7 +348,6 @@ export default function PlantMasterPage() {
 
   const handleDelete =
     async (id) => {
-
       const confirmDelete =
         window.confirm(
           "Delete this plant?"
@@ -374,14 +362,13 @@ export default function PlantMasterPage() {
         await deletePlant(id);
 
         fetchPlants();
-
       } catch (error) {
         console.error(error);
       }
     };
 
   /* ===================================
-      MODAL
+      DETAILS MODAL
   =================================== */
 
   const openModal = (
@@ -390,16 +377,33 @@ export default function PlantMasterPage() {
     setSelectedPlant(
       plant
     );
-    setIsModalOpen(true);
+
+    setIsModalOpen(
+      true
+    );
   };
 
   const closeModal =
     () => {
+      setSelectedPlant(
+        null
+      );
+
       setIsModalOpen(
         false
       );
-      setSelectedPlant(
-        null
+    };
+
+  /* ===================================
+      OPEN ADD MODAL
+  =================================== */
+
+  const openAddModal =
+    () => {
+      resetForm();
+
+      setIsFormModalOpen(
+        true
       );
     };
 
@@ -410,7 +414,6 @@ export default function PlantMasterPage() {
   const filteredPlants =
     plants.filter(
       (plant) => {
-
         const searchMatch =
           plant.plantName
             ?.toLowerCase()
@@ -456,96 +459,202 @@ export default function PlantMasterPage() {
 
   return (
     <div
-      className="min-h-screen bg-white p-6"
+      className="min-h-screen bg-slate-50"
       style={{
         fontFamily:
           "'IBM Plex Sans', sans-serif",
       }}
     >
+      {/* PAGE HEADER */}
 
-      {/* HEADER */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-5">
 
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
+        <div className="flex items-center gap-3">
 
-        <div className="flex items-center gap-4">
-
-          <div className="bg-cyan-700 p-4 rounded-2xl text-white">
-            <Factory size={30} />
+          <div className="w-11 h-11 rounded-xl bg-cyan-700 text-white flex items-center justify-center">
+            <Factory
+              size={20}
+            />
           </div>
 
           <div>
-            <h1 className="text-3xl font-bold text-slate-800">
+            <h1 className="text-xl font-semibold text-slate-800">
               Plant Master
             </h1>
 
-            <p className="text-slate-500">
-              Conveyor Capacity &
-              Plant Management
+            <p className="text-xs text-slate-500">
+              Plant Capacity &
+              Production Management
             </p>
           </div>
 
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-2">
 
-          <button className="bg-white border px-4 py-3 rounded-xl flex items-center gap-2">
-            <Download size={18} />
+          <button
+            className="h-10 px-4 bg-white border border-slate-200 rounded-lg text-sm flex items-center gap-2 hover:bg-slate-50"
+          >
+            <Download
+              size={16}
+            />
             Export
           </button>
 
           <button
-            onClick={() => {
-              resetForm();
-              window.scrollTo({
-                top: 0,
-                behavior:
-                  "smooth",
-              });
-            }}
-            className="bg-cyan-700 text-white px-5 py-3 rounded-xl flex items-center gap-2"
+            onClick={
+              openAddModal
+            }
+            className="h-10 px-4 bg-cyan-700 hover:bg-cyan-800 text-white rounded-lg text-sm flex items-center gap-2"
           >
-            <Plus size={18} />
+            <Plus
+              size={16}
+            />
             Add Plant
           </button>
 
         </div>
 
       </div>
-            {/* SEARCH & FILTER */}
 
-      <div className="bg-white border rounded-2xl shadow-sm p-5 mb-6">
+      {/* KPI CARDS */}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+
+          <div className="flex justify-between items-center">
+
+            <div>
+
+              <p className="text-xs text-slate-500 uppercase">
+                Total Plants
+              </p>
+
+              <h2
+                className="text-2xl font-bold mt-2"
+                style={{
+                  fontFamily:
+                    "'IBM Plex Mono', monospace",
+                }}
+              >
+                {totalPlants}
+              </h2>
+
+            </div>
+
+            <Factory
+              size={24}
+              className="text-cyan-700"
+            />
+
+          </div>
+
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+
+          <div className="flex justify-between items-center">
+
+            <div>
+
+              <p className="text-xs text-slate-500 uppercase">
+                Active
+              </p>
+
+              <h2
+                className="text-2xl font-bold mt-2 text-emerald-600"
+                style={{
+                  fontFamily:
+                    "'IBM Plex Mono', monospace",
+                }}
+              >
+                {activePlants}
+              </h2>
+
+            </div>
+
+            <CheckCircle2
+              size={24}
+              className="text-emerald-600"
+            />
+
+          </div>
+
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+
+          <div className="flex justify-between items-center">
+
+            <div>
+
+              <p className="text-xs text-slate-500 uppercase">
+                Inactive
+              </p>
+
+              <h2
+                className="text-2xl font-bold mt-2 text-rose-600"
+                style={{
+                  fontFamily:
+                    "'IBM Plex Mono', monospace",
+                }}
+              >
+                {inactivePlants}
+              </h2>
+
+            </div>
+
+            <XCircle
+              size={24}
+              className="text-rose-600"
+            />
+
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* SEARCH */}
+
+      <div className="bg-white border border-slate-200 rounded-xl p-4 mb-5">
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
 
           <div className="relative">
 
             <Search
-              size={18}
-              className="absolute left-3 top-4 text-slate-400"
+              size={16}
+              className="absolute left-3 top-3 text-slate-400"
             />
 
             <input
               type="text"
-              placeholder="Search Plant Name or Code..."
-              value={searchTerm}
+              placeholder="Search plant..."
+              value={
+                searchTerm
+              }
               onChange={(e) =>
                 setSearchTerm(
                   e.target.value
                 )
               }
-              className="w-full border rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-700"
+              className="w-full h-10 border border-slate-300 rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
             />
 
           </div>
 
           <select
-            value={statusFilter}
+            value={
+              statusFilter
+            }
             onChange={(e) =>
               setStatusFilter(
                 e.target.value
               )
             }
-            className="border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-700"
+            className="h-10 border border-slate-300 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
           >
             <option value="All">
               All Status
@@ -558,468 +667,88 @@ export default function PlantMasterPage() {
             <option value="Inactive">
               Inactive
             </option>
+
           </select>
 
         </div>
 
       </div>
 
-      {/* STAT CARDS */}
+            {/* CAPACITY SUMMARY */}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 mb-5">
 
-        <div className="bg-white border rounded-2xl p-6 shadow-sm">
-
-          <div className="flex justify-between items-center">
-
-            <div>
-
-              <p className="text-slate-500">
-                Total Plants
-              </p>
-
-              <h2
-                className="text-4xl font-bold mt-2"
-                style={{
-                  fontFamily:
-                    "'IBM Plex Mono', monospace",
-                }}
-              >
-                {totalPlants}
-              </h2>
-
-            </div>
-
-            <Factory
-              size={34}
-              className="text-cyan-700"
-            />
-
-          </div>
-
-        </div>
-
-        <div className="bg-white border rounded-2xl p-6 shadow-sm">
-
-          <div className="flex justify-between items-center">
-
-            <div>
-
-              <p className="text-slate-500">
-                Active Plants
-              </p>
-
-              <h2
-                className="text-4xl font-bold mt-2 text-emerald-600"
-                style={{
-                  fontFamily:
-                    "'IBM Plex Mono', monospace",
-                }}
-              >
-                {activePlants}
-              </h2>
-
-            </div>
-
-            <CheckCircle2
-              size={34}
-              className="text-emerald-600"
-            />
-
-          </div>
-
-        </div>
-
-        <div className="bg-white border rounded-2xl p-6 shadow-sm">
-
-          <div className="flex justify-between items-center">
-
-            <div>
-
-              <p className="text-slate-500">
-                Inactive Plants
-              </p>
-
-              <h2
-                className="text-4xl font-bold mt-2 text-rose-600"
-                style={{
-                  fontFamily:
-                    "'IBM Plex Mono', monospace",
-                }}
-              >
-                {inactivePlants}
-              </h2>
-
-            </div>
-
-            <XCircle
-              size={34}
-              className="text-rose-600"
-            />
-
-          </div>
-
-        </div>
-
-      </div>
-
-      {/* FORM */}
-
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white border rounded-2xl shadow-sm p-6 mb-8"
-      >
-
-        <div className="flex items-center gap-3 mb-6">
-
-          <Factory
-            size={24}
-            className="text-cyan-700"
-          />
-
-          <h2 className="text-2xl font-bold">
-
-            {editingId
-              ? "Edit Plant"
-              : "Add New Plant"}
-
-          </h2>
-
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Plant Name
-            </label>
-
-            <input
-              name="plantName"
-              value={
-                formData.plantName
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            />
-
-          </div>
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Plant Code
-            </label>
-
-            <input
-              name="plantCode"
-              value={
-                formData.plantCode
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            />
-
-          </div>
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Location
-            </label>
-
-            <input
-              name="location"
-              value={
-                formData.location
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            />
-
-          </div>
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Plant Admin
-            </label>
-
-            <input
-              name="plantAdmin"
-              value={
-                formData.plantAdmin
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            />
-
-          </div>
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Conveyor Length
-            </label>
-
-            <input
-              type="number"
-              name="conveyorLength"
-              value={
-                formData.conveyorLength
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            />
-
-          </div>
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Conveyor Speed
-            </label>
-
-            <input
-              type="number"
-              name="conveyorSpeed"
-              value={
-                formData.conveyorSpeed
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            />
-
-          </div>
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Pitch Distance
-            </label>
-
-            <input
-              type="number"
-              name="pitchDistance"
-              value={
-                formData.pitchDistance
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            />
-
-          </div>
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Set Per Round
-            </label>
-
-            <input
-              type="number"
-              name="setPerRound"
-              value={
-                formData.setPerRound
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            />
-
-          </div>
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Available Time
-            </label>
-
-            <input
-              type="number"
-              name="availableTime"
-              value={
-                formData.availableTime
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            />
-
-          </div>
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Efficiency
-            </label>
-
-            <select
-              name="efficiency"
-              value={
-                formData.efficiency
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            >
-              <option value="100">
-                100%
-              </option>
-              <option value="95">
-                95%
-              </option>
-              <option value="85">
-                85%
-              </option>
-              <option value="75">
-                75%
-              </option>
-            </select>
-
-          </div>
-
-          <div>
-
-            <label className="text-sm text-slate-600">
-              Status
-            </label>
-
-            <select
-              name="status"
-              value={
-                formData.status
-              }
-              onChange={
-                handleChange
-              }
-              className="w-full border rounded-xl p-3 mt-1"
-            >
-              <option>
-                Active
-              </option>
-
-              <option>
-                Inactive
-              </option>
-
-            </select>
-
-          </div>
-
-        </div>
-                <div className="mt-6 flex gap-3">
-
-          <button
-            type="submit"
-            className="bg-cyan-700 text-white px-6 py-3 rounded-xl hover:bg-cyan-800 transition"
-          >
-            {editingId
-              ? "Update Plant"
-              : "Save Plant"}
-          </button>
-
-          {editingId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="border px-6 py-3 rounded-xl"
-            >
-              Cancel Edit
-            </button>
-          )}
-
-        </div>
-
-      </form>
-
-      {/* CAPACITY PANEL */}
-
-      <div className="bg-white border rounded-2xl shadow-sm p-6 mb-8">
-
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-2 mb-4">
 
           <Activity
-            size={24}
+            size={18}
             className="text-cyan-700"
           />
 
-          <h2 className="text-2xl font-bold">
-            Plant Capacity Calculation
+          <h2 className="text-sm font-semibold text-slate-800">
+            Capacity Preview
           </h2>
 
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
 
-          <div className="border rounded-xl p-4">
-            <p className="text-slate-500 text-sm">
+          <div className="border border-slate-200 rounded-lg p-3">
+            <p className="text-[11px] text-slate-500">
               Hangers
             </p>
-            <h3 className="text-2xl font-bold font-mono">
+
+            <h3 className="text-lg font-bold font-mono mt-1">
               {hangers}
             </h3>
           </div>
 
-          <div className="border rounded-xl p-4">
-            <p className="text-slate-500 text-sm">
+          <div className="border border-slate-200 rounded-lg p-3">
+            <p className="text-[11px] text-slate-500">
               Process Time
             </p>
-            <h3 className="text-2xl font-bold font-mono">
+
+            <h3 className="text-lg font-bold font-mono mt-1">
               {processTime}
             </h3>
           </div>
 
-          <div className="border rounded-xl p-4">
-            <p className="text-slate-500 text-sm">
+          <div className="border border-slate-200 rounded-lg p-3">
+            <p className="text-[11px] text-slate-500">
               Total Rounds
             </p>
-            <h3 className="text-2xl font-bold font-mono">
+
+            <h3 className="text-lg font-bold font-mono mt-1">
               {totalRoundsShift}
             </h3>
           </div>
 
-          <div className="border rounded-xl p-4">
-            <p className="text-slate-500 text-sm">
-              Effective Rounds
+          <div className="border border-slate-200 rounded-lg p-3">
+            <p className="text-[11px] text-slate-500">
+              Effective
             </p>
-            <h3 className="text-2xl font-bold font-mono">
+
+            <h3 className="text-lg font-bold font-mono mt-1">
               {effectiveRounds}
             </h3>
           </div>
 
-          <div className="border rounded-xl p-4">
-            <p className="text-slate-500 text-sm">
-              Production/Shift
+          <div className="border border-slate-200 rounded-lg p-3">
+            <p className="text-[11px] text-slate-500">
+              Shift Output
             </p>
-            <h3 className="text-2xl font-bold font-mono">
+
+            <h3 className="text-lg font-bold font-mono mt-1">
               {productionPerShift}
             </h3>
           </div>
 
-          <div className="border rounded-xl p-4">
-            <p className="text-slate-500 text-sm">
-              Target/Day
+          <div className="border border-cyan-200 bg-cyan-50 rounded-lg p-3">
+            <p className="text-[11px] text-cyan-700">
+              Target / Day
             </p>
-            <h3 className="text-2xl font-bold font-mono text-cyan-700">
+
+            <h3 className="text-lg font-bold font-mono mt-1 text-cyan-700">
               {totalTargetPerDay}
             </h3>
           </div>
@@ -1030,53 +759,57 @@ export default function PlantMasterPage() {
 
       {/* PLANT TABLE */}
 
-      <div className="bg-white border rounded-2xl shadow-sm p-6">
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
 
-        <div className="flex justify-between items-center mb-6">
+        <div className="px-4 py-3 border-b border-slate-200 flex justify-between items-center">
 
-          <h2 className="text-2xl font-bold">
-            Plant List
-          </h2>
+          <div>
 
-          <span className="text-slate-500">
-            {filteredPlants.length} of {plants.length} plants
-          </span>
+            <h2 className="text-sm font-semibold text-slate-800">
+              Plant List
+            </h2>
+
+            <p className="text-xs text-slate-500 mt-1">
+              {filteredPlants.length} of {plants.length} plants
+            </p>
+
+          </div>
 
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[650px]">
 
-          <table className="w-full">
+          <table className="w-full text-sm">
 
-            <thead>
+            <thead className="sticky top-0 bg-slate-100 z-10">
 
-              <tr className="border-b bg-slate-50">
+              <tr>
 
-                <th className="text-left p-4">
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">
                   Plant
                 </th>
 
-                <th className="text-left p-4">
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">
                   Code
                 </th>
 
-                <th className="text-left p-4">
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">
                   Location
                 </th>
 
-                <th className="text-left p-4">
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">
                   Admin
                 </th>
 
-                <th className="text-left p-4">
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">
                   Target / Day
                 </th>
 
-                <th className="text-left p-4">
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">
                   Status
                 </th>
 
-                <th className="text-left p-4">
+                <th className="text-center px-4 py-3 font-semibold text-slate-700">
                   Actions
                 </th>
 
@@ -1092,9 +825,9 @@ export default function PlantMasterPage() {
 
                   <td
                     colSpan="7"
-                    className="text-center p-10"
+                    className="text-center py-12 text-slate-500"
                   >
-                    Loading...
+                    Loading Plants...
                   </td>
 
                 </tr>
@@ -1105,7 +838,7 @@ export default function PlantMasterPage() {
 
                   <td
                     colSpan="7"
-                    className="text-center p-10"
+                    className="text-center py-12 text-slate-500"
                   >
                     No Plants Found
                   </td>
@@ -1119,69 +852,72 @@ export default function PlantMasterPage() {
 
                     <tr
                       key={plant._id}
-                      className="border-b hover:bg-slate-50 cursor-pointer"
                       onClick={() =>
                         openModal(
                           plant
                         )
                       }
+                      className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition"
                     >
 
-                      <td className="p-4 font-semibold">
-                        {plant.plantName}
+                      <td className="px-4 py-3">
+
+                        <div className="font-medium text-slate-800">
+                          {plant.plantName}
+                        </div>
+
                       </td>
 
-                      <td className="p-4 font-mono">
+                      <td className="px-4 py-3 font-mono text-xs">
                         {plant.plantCode}
                       </td>
 
-                      <td className="p-4">
+                      <td className="px-4 py-3">
                         {plant.location}
                       </td>
 
-                      <td className="p-4">
+                      <td className="px-4 py-3">
                         {plant.plantAdmin}
                       </td>
 
-                      <td className="p-4 font-mono">
+                      <td className="px-4 py-3 font-mono">
                         {plant.totalTargetPerDay?.toLocaleString()}
                       </td>
 
-                      <td className="p-4">
+                      <td className="px-4 py-3">
 
-                        {plant.status ===
-                        "Active" ? (
+                        {plant.status === "Active" ? (
 
-                          <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full">
+                          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium">
 
-                            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
 
                             Active
 
-                          </div>
+                          </span>
 
                         ) : (
 
-                          <div className="inline-flex items-center gap-2 bg-rose-50 text-rose-700 px-3 py-1 rounded-full">
+                          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-50 text-rose-700 text-xs font-medium">
 
-                            <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+                            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
 
                             Inactive
 
-                          </div>
+                          </span>
 
                         )}
 
                       </td>
 
                       <td
-                        className="p-4"
+                        className="px-4 py-3"
                         onClick={(e) =>
                           e.stopPropagation()
                         }
                       >
 
-                        <div className="flex gap-3">
+                        <div className="flex justify-center items-center gap-2">
 
                           <button
                             onClick={() =>
@@ -1189,9 +925,10 @@ export default function PlantMasterPage() {
                                 plant
                               )
                             }
+                            className="w-8 h-8 rounded-lg bg-cyan-50 hover:bg-cyan-100 flex items-center justify-center"
                           >
                             <Pencil
-                              size={18}
+                              size={15}
                               className="text-cyan-700"
                             />
                           </button>
@@ -1202,9 +939,10 @@ export default function PlantMasterPage() {
                                 plant._id
                               )
                             }
+                            className="w-8 h-8 rounded-lg bg-rose-50 hover:bg-rose-100 flex items-center justify-center"
                           >
                             <Trash2
-                              size={18}
+                              size={15}
                               className="text-rose-600"
                             />
                           </button>
@@ -1228,40 +966,303 @@ export default function PlantMasterPage() {
 
       </div>
 
+            {/* ADD / EDIT MODAL */}
+
+      {isFormModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={resetForm}
+        >
+          <div
+            className="bg-white w-full max-w-5xl rounded-2xl shadow-xl overflow-hidden max-h-[92vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+
+            {/* MODAL HEADER */}
+
+            <div className="flex justify-between items-center px-6 py-4 border-b">
+
+              <div>
+                <h2 className="text-lg font-semibold text-slate-800">
+                  {editingId
+                    ? "Edit Plant"
+                    : "Add New Plant"}
+                </h2>
+
+                <p className="text-xs text-slate-500 mt-1">
+                  Plant Configuration & Capacity Setup
+                </p>
+              </div>
+
+              <button
+                onClick={resetForm}
+                className="w-9 h-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
+              >
+                <X size={18} />
+              </button>
+
+            </div>
+
+            {/* FORM */}
+
+            <form
+              onSubmit={handleSubmit}
+              className="p-6"
+            >
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Plant Name
+                  </label>
+
+                  <input
+                    name="plantName"
+                    value={formData.plantName}
+                    onChange={handleChange}
+                    required
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Plant Code
+                  </label>
+
+                  <input
+                    name="plantCode"
+                    value={formData.plantCode}
+                    onChange={handleChange}
+                    required
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Location
+                  </label>
+
+                  <input
+                    name="location"
+                    value={formData.location}
+                    onChange={handleChange}
+                    required
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Plant Admin
+                  </label>
+
+                  <input
+                    name="plantAdmin"
+                    value={formData.plantAdmin}
+                    onChange={handleChange}
+                    required
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Conveyor Length
+                  </label>
+
+                  <input
+                    type="number"
+                    name="conveyorLength"
+                    value={formData.conveyorLength}
+                    onChange={handleChange}
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Conveyor Speed
+                  </label>
+
+                  <input
+                    type="number"
+                    name="conveyorSpeed"
+                    value={formData.conveyorSpeed}
+                    onChange={handleChange}
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Pitch Distance
+                  </label>
+
+                  <input
+                    type="number"
+                    name="pitchDistance"
+                    value={formData.pitchDistance}
+                    onChange={handleChange}
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Set Per Round
+                  </label>
+
+                  <input
+                    type="number"
+                    name="setPerRound"
+                    value={formData.setPerRound}
+                    onChange={handleChange}
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Available Time
+                  </label>
+
+                  <input
+                    type="number"
+                    name="availableTime"
+                    value={formData.availableTime}
+                    onChange={handleChange}
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Efficiency
+                  </label>
+
+                  <select
+                    name="efficiency"
+                    value={formData.efficiency}
+                    onChange={handleChange}
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  >
+                    <option value="100">100%</option>
+                    <option value="95">95%</option>
+                    <option value="85">85%</option>
+                    <option value="75">75%</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500">
+                    Status
+                  </label>
+
+                  <select
+                    name="status"
+                    value={formData.status}
+                    onChange={handleChange}
+                    className="w-full h-10 border rounded-lg px-3 mt-1 text-sm"
+                  >
+                    <option>Active</option>
+                    <option>Inactive</option>
+                  </select>
+                </div>
+
+              </div>
+
+              {/* CALC PREVIEW */}
+
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mt-6">
+
+                {[
+                  ["Hangers", hangers],
+                  ["Process Time", processTime],
+                  ["Rounds", totalRoundsShift],
+                  ["Effective", effectiveRounds],
+                  ["Shift Output", productionPerShift],
+                  ["Target / Day", totalTargetPerDay],
+                ].map((item) => (
+                  <div
+                    key={item[0]}
+                    className="border rounded-lg p-3 bg-slate-50"
+                  >
+                    <p className="text-[11px] text-slate-500">
+                      {item[0]}
+                    </p>
+
+                    <h3 className="font-bold text-lg mt-1">
+                      {item[1]}
+                    </h3>
+                  </div>
+                ))}
+
+              </div>
+
+              {/* BUTTONS */}
+
+              <div className="flex justify-end gap-3 mt-6">
+
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="h-10 px-5 border rounded-lg"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="h-10 px-5 bg-cyan-700 hover:bg-cyan-800 text-white rounded-lg"
+                >
+                  {editingId
+                    ? "Update Plant"
+                    : "Save Plant"}
+                </button>
+
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
       {/* DETAILS MODAL */}
 
       {isModalOpen &&
         selectedPlant && (
 
           <div
-            className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
             onClick={closeModal}
           >
 
             <div
-              className="bg-white rounded-3xl max-w-4xl w-full p-8 max-h-[90vh] overflow-y-auto"
+              className="bg-white w-full max-w-4xl rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto"
               onClick={(e) =>
                 e.stopPropagation()
               }
             >
 
-              <div className="flex justify-between items-center mb-6">
+              <div className="flex justify-between items-center px-6 py-4 border-b">
 
-                <h2 className="text-2xl font-bold">
+                <h2 className="text-lg font-semibold">
                   Plant Details
                 </h2>
 
                 <button
-                  onClick={
-                    closeModal
-                  }
+                  onClick={closeModal}
                 >
-                  <X />
+                  <X size={18} />
                 </button>
 
               </div>
 
-              <div className="grid md:grid-cols-2 gap-5">
+              <div className="p-6 grid md:grid-cols-2 gap-4">
 
                 {Object.entries(
                   selectedPlant
@@ -1279,17 +1280,16 @@ export default function PlantMasterPage() {
                     return (
                       <div
                         key={key}
-                        className="border rounded-xl p-4"
+                        className="border rounded-lg p-4"
                       >
-                        <p className="text-slate-500 text-sm">
+
+                        <p className="text-xs uppercase text-slate-500">
                           {key}
                         </p>
 
-                        <h4 className="font-semibold mt-1">
-                          {String(
-                            value
-                          )}
-                        </h4>
+                        <p className="font-medium mt-1 text-slate-800">
+                          {String(value)}
+                        </p>
 
                       </div>
                     );

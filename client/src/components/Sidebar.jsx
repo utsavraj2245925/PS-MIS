@@ -1,21 +1,78 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+
+import {
+  LayoutDashboard,
+  Factory,
+  Boxes,
+  Package,
+  Users,
+  ClipboardList,
+  BarChart3,
+  Settings,
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 
 export default function Sidebar({
   collapsed,
   setCollapsed,
 }) {
+  const location = useLocation();
+
+  const menuItems = [
+    {
+      name: "Dashboard",
+      path: "/",
+      icon: LayoutDashboard,
+    },
+    {
+      name: "Plant Master",
+      path: "/plant-master",
+      icon: Factory,
+    },
+    {
+      name: "Model Master",
+      path: "/model-master",
+      icon: Boxes,
+    },
+    {
+      name: "Part Master",
+      path: "/part-master",
+      icon: Package,
+    },
+    {
+      name: "User Master",
+      path: "/user-master",
+      icon: Users,
+    },
+    {
+      name: "Production",
+      path: "/production-entry",
+      icon: ClipboardList,
+    },
+  ];
+
   return (
     <aside
-      className={`fixed left-0 top-0 h-screen bg-slate-900 text-white transition-all duration-300 z-50 ${
-        collapsed ? "w-20" : "w-64"
+      className={`fixed left-0 top-0 h-screen bg-slate-950 border-r border-slate-800 text-white transition-all duration-300 z-50 ${
+        collapsed
+          ? "w-[60px]"
+          : "w-[190px]"
       }`}
     >
+      {/* HEADER */}
 
-      <div className="p-4 flex justify-between items-center border-b border-slate-700">
-
+      <div
+        className={`h-14 border-b border-slate-800 flex items-center ${
+          collapsed
+            ? "justify-center"
+            : "justify-between px-3"
+        }`}
+      >
         {!collapsed && (
-          <h2 className="font-bold text-lg">
-            Paint Shop MIS
+          <h2 className="text-[11px] font-semibold tracking-wide text-slate-200">
+            PAINT SHOP MIS
           </h2>
         )}
 
@@ -23,77 +80,129 @@ export default function Sidebar({
           onClick={() =>
             setCollapsed(!collapsed)
           }
-          className="text-xl"
+          className="text-slate-400 hover:text-white transition-all"
         >
-          ☰
+          {collapsed ? (
+            <ChevronRight size={16} strokeWidth={2.5} />
+          ) : (
+            <ChevronLeft size={16} strokeWidth={2.5} />
+          )}
         </button>
-
       </div>
 
-      <nav className="mt-4">
+      {/* MASTER DATA */}
 
-        <ul className="space-y-2 px-2">
+      <div className="p-2">
+        {!collapsed && (
+          <p className="text-[9px] uppercase text-slate-500 px-2 mb-2">
+            Master Data
+          </p>
+        )}
 
-          <Link to="/">
-            <li className="hover:bg-slate-800 rounded-lg p-3">
-              📊 {!collapsed && "Dashboard"}
-            </li>
-          </Link>
+        <ul className="space-y-1">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
 
-          <Link to="/plant-master">
-            <li className="hover:bg-slate-800 rounded-lg p-3">
-              🏭 {!collapsed && "Plant Master"}
-            </li>
-          </Link>
+            const active =
+              location.pathname ===
+              item.path;
 
-          <Link to="/model-master">
-            <li className="hover:bg-slate-800 rounded-lg p-3">
-              📦 {!collapsed && "Model Master"}
-            </li>
-          </Link>
+            return (
+              <li key={item.path}>
+                <Link
+                  to={item.path}
+                  className={`flex items-center rounded-lg transition-all duration-200 ${
+                    collapsed
+                      ? "justify-center h-10"
+                      : "gap-3 px-3 h-10"
+                  } ${
+                    active
+                      ? "bg-cyan-700 text-white"
+                      : "text-slate-300 hover:bg-slate-800"
+                  }`}
+                >
+                  <Icon
+                    size={18}
+                    className="flex-shrink-0"
+                  />
 
-          <Link to="/part-master">
-            <li className="hover:bg-slate-800 rounded-lg p-3">
-              🧩 {!collapsed && "Part Master"}
-            </li>
-          </Link>
-
-          <Link to="/user-master">
-            <li className="hover:bg-slate-800 rounded-lg p-3">
-              👤 {!collapsed && "User Master"}
-            </li>
-          </Link>
-
-          <Link to="/production-entry">
-            <li className="hover:bg-slate-800 rounded-lg p-3">
-              🏗 {!collapsed && "Production Entry"}
-            </li>
-          </Link>
-
+                  {!collapsed && (
+                    <span className="text-[12px]">
+                      {item.name}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            );
+          })}
         </ul>
 
-        <div className="border-t border-slate-700 mt-6 pt-6">
+        {/* Divider */}
 
-          <ul className="space-y-2 px-2">
+        <div className="border-t border-slate-800 my-4"></div>
 
-            <li className="hover:bg-slate-800 rounded-lg p-3">
-              ✅ {!collapsed && "Quality Inspection"}
-            </li>
+        {!collapsed && (
+          <p className="text-[9px] uppercase text-slate-500 px-2 mb-2">
+            Analytics
+          </p>
+        )}
 
-            <li className="hover:bg-slate-800 rounded-lg p-3">
-              📈 {!collapsed && "Reports & Analysis"}
-            </li>
+        <ul className="space-y-1">
+          <li>
+            <button
+              className={`w-full flex items-center rounded-lg text-slate-300 hover:bg-slate-800 transition-all ${
+                collapsed
+                  ? "justify-center h-10"
+                  : "gap-3 px-3 h-10"
+              }`}
+            >
+              <CheckCircle size={18} />
 
-            <li className="hover:bg-slate-800 rounded-lg p-3">
-              ⚙️ {!collapsed && "Settings"}
-            </li>
+              {!collapsed && (
+                <span className="text-[12px]">
+                  Quality
+                </span>
+              )}
+            </button>
+          </li>
 
-          </ul>
+          <li>
+            <button
+              className={`w-full flex items-center rounded-lg text-slate-300 hover:bg-slate-800 transition-all ${
+                collapsed
+                  ? "justify-center h-10"
+                  : "gap-3 px-3 h-10"
+              }`}
+            >
+              <BarChart3 size={18} />
 
-        </div>
+              {!collapsed && (
+                <span className="text-[12px]">
+                  Reports
+                </span>
+              )}
+            </button>
+          </li>
 
-      </nav>
+          <li>
+            <button
+              className={`w-full flex items-center rounded-lg text-slate-300 hover:bg-slate-800 transition-all ${
+                collapsed
+                  ? "justify-center h-10"
+                  : "gap-3 px-3 h-10"
+              }`}
+            >
+              <Settings size={18} />
 
+              {!collapsed && (
+                <span className="text-[12px]">
+                  Settings
+                </span>
+              )}
+            </button>
+          </li>
+        </ul>
+      </div>
     </aside>
   );
 }
