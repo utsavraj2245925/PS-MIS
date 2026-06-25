@@ -5,48 +5,100 @@ const plantSchema = new mongoose.Schema(
     plantName: {
       type: String,
       required: true,
+      trim: true,
     },
 
     plantCode: {
-    type: String,
-    required: true,
-    unique: true,
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
     },
 
     location: {
       type: String,
       required: true,
+      trim: true,
     },
 
     plantAdmin: {
       type: String,
       required: true,
+      trim: true,
     },
 
-    conveyorLength: Number,
+    // ==========================
+    // MANUAL INPUT FIELDS
+    // ==========================
 
-    conveyorSpeed: Number,
+    conveyorLength: {
+      type: Number,
+      default: 0,
+    },
 
-    pitchDistance: Number,
+    conveyorSpeed: {
+      type: Number,
+      default: 0,
+    },
 
-    setPerRound: Number,
+    pitchDistance: {
+      type: Number,
+      default: 0,
+    },
 
-    availableTime: Number,
+    availableTime: {
+      type: Number,
+      default: 630,
+    },
 
-    efficiency: Number,
+    demandPerShift: {
+      type: Number,
+      default: 0,
+    },
 
-    hangers: Number,
+    hangerEfficiency: {
+      type: Number,
+      enum: [100, 95, 85, 75],
+      default: 100,
+    },
 
-    processTime: Number,
+    // ==========================
+    // AUTO CALCULATED FIELDS
+    // ==========================
 
-    totalRoundsShift: Number,
+    totalHangers: {
+      type: Number,
+      default: 0,
+    },
 
-    productionPerShift: Number,
+    processTime: {
+      type: Number,
+      default: 0,
+    },
 
-    totalTargetPerDay: Number,
+    totalRoundsShift: {
+      type: Number,
+      default: 0,
+    },
+
+    hangerPerMinute: {
+      type: Number,
+      default: 0,
+    },
+
+    availableHangerPerShift: {
+      type: Number,
+      default: 0,
+    },
+
+    effectiveHangerPerShift: {
+      type: Number,
+      default: 0,
+    },
 
     status: {
       type: String,
+      enum: ["Active", "Inactive"],
       default: "Active",
     },
   },

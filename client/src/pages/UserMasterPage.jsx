@@ -7,14 +7,11 @@ import React, {
 import axios from "axios";
 
 import {
+  ConfigProvider,
+  theme as antdTheme,
   Modal,
-  Drawer,
-  Form,
-  Input,
   Select,
-  Button,
   Table,
-  Tag,
   Avatar,
   Tooltip,
   Popconfirm,
@@ -40,6 +37,7 @@ import {
   Lock,
   RotateCcw,
   Check,
+  ChevronDown,
 } from "lucide-react";
 
 const API = "http://localhost:4000/api/users";
@@ -56,12 +54,36 @@ const STATUS_OPTIONS = [
   { value: "Inactive", label: "Inactive" },
 ];
 
-// ---- visual tokens for role / status (kept purely presentational) ----
+/* =========================================================================
+   DESIGN TOKENS — dark "workspace" theme (derived from reference mock)
+   bg: near-black page, raised dark-gray panels, lime-acid accent for
+   primary actions / active state, soft white floating card for the
+   detail / edit overlay (mirrors the white "Summary" card floating over
+   the dark canvas in the reference).
+   ========================================================================= */
+const T = {
+  page: "#121212",
+  panel: "#1A1A1A",
+  panelBorder: "#272727",
+  card: "#1E1E1E",
+  cardHover: "#242424",
+  cardBorder: "#2A2A2A",
+  text: "#F2F2F0",
+  textMuted: "#8C8C8C",
+  textFaint: "#5E5E5E",
+  lime: "#D7FE63",
+  limeDeep: "#A9D62E",
+  limeSoft: "rgba(215,254,99,0.12)",
+  danger: "#FF6B6B",
+  dangerSoft: "rgba(255,107,107,0.12)",
+  divider: "#262626",
+};
+
 const ROLE_STYLE = {
-  SUPER_ADMIN: { bg: "#FEE2E2", fg: "#B91C1C", dot: "#EF4444" },
-  PLANT_ADMIN: { bg: "#CFFAFE", fg: "#0E7490", dot: "#06B6D4" },
-  MANAGER: { bg: "#F3E8FF", fg: "#7E22CE", dot: "#A855F7" },
-  USER: { bg: "#F1F5F9", fg: "#475569", dot: "#94A3B8" },
+  SUPER_ADMIN: { bg: "rgba(255,107,107,0.14)", fg: "#FF8B8B", dot: "#FF6B6B" },
+  PLANT_ADMIN: { bg: "rgba(94,234,212,0.14)", fg: "#7DEFDD", dot: "#5EEAD4" },
+  MANAGER: { bg: "rgba(196,181,253,0.14)", fg: "#CBB8FF", dot: "#C4B5FD" },
+  USER: { bg: "rgba(255,255,255,0.08)", fg: "#C8C8C8", dot: "#8C8C8C" },
 };
 
 const RoleTag = ({ role }) => {
@@ -76,13 +98,14 @@ const RoleTag = ({ role }) => {
         color: s.fg,
         fontSize: 11,
         fontWeight: 700,
-        letterSpacing: 0.3,
+        letterSpacing: 0.4,
         padding: "4px 10px",
         borderRadius: 999,
         textTransform: "uppercase",
+        whiteSpace: "nowrap",
       }}
     >
-      <span style={{ width: 6, height: 6, borderRadius: 999, background: s.dot }} />
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: s.dot, flexShrink: 0 }} />
       {role?.replace("_", " ")}
     </span>
   );
@@ -96,22 +119,16 @@ const StatusTag = ({ status }) => {
         display: "inline-flex",
         alignItems: "center",
         gap: 6,
-        background: active ? "#DCFCE7" : "#FFE4E6",
-        color: active ? "#15803D" : "#BE123C",
+        background: active ? T.limeSoft : T.dangerSoft,
+        color: active ? T.lime : T.danger,
         fontSize: 11,
         fontWeight: 700,
         padding: "4px 10px",
         borderRadius: 999,
+        whiteSpace: "nowrap",
       }}
     >
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: 999,
-          background: active ? "#22C55E" : "#F43F5E",
-        }}
-      />
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: active ? T.lime : T.danger }} />
       {status}
     </span>
   );
@@ -125,7 +142,7 @@ const initials = (name = "") =>
     .map((w) => w[0]?.toUpperCase())
     .join("") || "?";
 
-const AVATAR_PALETTE = ["#0E7490", "#7E22CE", "#B45309", "#15803D", "#BE123C", "#4338CA"];
+const AVATAR_PALETTE = ["#5EEAD4", "#C4B5FD", "#FCD34D", "#D7FE63", "#FF8B8B", "#93C5FD"];
 const avatarColor = (seed = "") => {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = seed.charCodeAt(i) + ((h << 5) - h);
@@ -154,7 +171,7 @@ export default function UserMasterPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // drawer (create / edit form) visibility — purely presentational addition
+  // create / edit form — now a centered Modal instead of a side Drawer
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // inline-edit toggle inside the details modal
@@ -354,32 +371,24 @@ export default function UserMasterPage() {
       label: "Total Users",
       value: totalUsers,
       icon: Users,
-      tint: "#0E7490",
-      tintBg: "#ECFEFF",
     },
     {
       key: "active",
       label: "Active Users",
       value: activeUsers,
       icon: UserCheck,
-      tint: "#15803D",
-      tintBg: "#F0FDF4",
     },
     {
       key: "managers",
       label: "Managers",
       value: managers,
       icon: Briefcase,
-      tint: "#7E22CE",
-      tintBg: "#FAF5FF",
     },
     {
       key: "plantAdmins",
       label: "Plant Admin",
       value: plantAdmins,
       icon: Shield,
-      tint: "#B91C1C",
-      tintBg: "#FEF2F2",
     },
   ];
 
@@ -391,9 +400,10 @@ export default function UserMasterPage() {
       render: (_, user) => (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Avatar
-            size={34}
+            size={32}
             style={{
               background: avatarColor(user.name || user.email),
+              color: "#121212",
               fontWeight: 700,
               fontSize: 12,
               flexShrink: 0,
@@ -405,8 +415,8 @@ export default function UserMasterPage() {
             <div
               style={{
                 fontWeight: 600,
-                fontSize: 13.5,
-                color: "#0F172A",
+                fontSize: 13,
+                color: T.text,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -417,7 +427,7 @@ export default function UserMasterPage() {
             <div
               style={{
                 fontSize: 12,
-                color: "#64748B",
+                color: T.textMuted,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -440,30 +450,30 @@ export default function UserMasterPage() {
       title: "Location",
       dataIndex: "location",
       key: "location",
-      width: 140,
-      render: (v) => <span style={{ fontSize: 13, color: "#334155" }}>{v || "—"}</span>,
+      width: 130,
+      render: (v) => <span style={{ fontSize: 13, color: "#B5B5B5" }}>{v || "—"}</span>,
     },
     {
       title: "Plant",
       dataIndex: "plant",
       key: "plant",
-      width: 120,
-      render: (v) => <span style={{ fontSize: 13, color: "#334155" }}>{v || "—"}</span>,
+      width: 110,
+      render: (v) => <span style={{ fontSize: 13, color: "#B5B5B5" }}>{v || "—"}</span>,
     },
     {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      width: 110,
+      width: 100,
       render: (s) => <StatusTag status={s} />,
     },
     {
       title: "Created",
       dataIndex: "createdAt",
       key: "createdAt",
-      width: 110,
+      width: 105,
       render: (v) => (
-        <span style={{ fontSize: 12.5, color: "#94A3B8" }}>
+        <span style={{ fontSize: 12.5, color: T.textFaint }}>
           {v ? new Date(v).toLocaleDateString() : "—"}
         </span>
       ),
@@ -471,7 +481,7 @@ export default function UserMasterPage() {
     {
       title: "",
       key: "actions",
-      width: 90,
+      width: 86,
       render: (_, user) => (
         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
           <Tooltip title="Edit">
@@ -480,7 +490,7 @@ export default function UserMasterPage() {
                 e.stopPropagation();
                 handleEdit(user);
               }}
-              style={iconBtnStyle("#FFFBEB", "#B45309")}
+              style={iconBtnStyle(T.limeSoft, T.lime)}
             >
               <Pencil size={14} />
             </button>
@@ -490,12 +500,10 @@ export default function UserMasterPage() {
             description="This action cannot be undone."
             okText="Delete"
             okButtonProps={{ danger: true }}
-            onConfirm={(e) => {
-              handleDelete(user._id);
-            }}
+            onConfirm={() => handleDelete(user._id)}
             onPopupClick={(e) => e?.stopPropagation?.()}
           >
-            <button onClick={(e) => e.stopPropagation()} style={iconBtnStyle("#FFF1F2", "#BE123C")}>
+            <button onClick={(e) => e.stopPropagation()} style={iconBtnStyle(T.dangerSoft, T.danger)}>
               <Trash2 size={14} />
             </button>
           </Popconfirm>
@@ -505,542 +513,568 @@ export default function UserMasterPage() {
   ];
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#F8FAFC",
-        fontFamily: "'IBM Plex Sans', sans-serif",
-        padding: "28px 32px",
+    <ConfigProvider
+      theme={{
+        algorithm: antdTheme.darkAlgorithm,
+        token: {
+          colorPrimary: T.lime,
+          colorBgContainer: T.card,
+          colorBgElevated: T.card,
+          colorBorder: T.cardBorder,
+          colorText: T.text,
+          colorTextSecondary: T.textMuted,
+          borderRadius: 10,
+          fontFamily: "'IBM Plex Sans', sans-serif",
+          colorLink: T.lime,
+        },
+        components: {
+          Select: { colorBgContainer: T.card, colorBorder: T.cardBorder },
+          Table: { colorBgContainer: "transparent", headerBg: "transparent" },
+          Modal: { colorBgElevated: "#FAFAF8" },
+        },
       }}
     >
-      <GlobalStyle />
-
-      {/* HEADER */}
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 16,
-          marginBottom: 24,
+          minHeight: "100vh",
+          background: T.page,
+          fontFamily: "'IBM Plex Sans', sans-serif",
+          padding: "30px 36px",
         }}
       >
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 11,
-                background: "linear-gradient(135deg,#0E7490,#0891B2)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 6px 14px -4px rgba(14,116,144,0.45)",
-              }}
-            >
-              <Users size={18} color="#fff" />
-            </div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0F172A", margin: 0 }}>
-              User Master
-            </h1>
-          </div>
-          <p style={{ color: "#64748B", fontSize: 13.5, margin: "4px 0 0 46px" }}>
-            Enterprise user management &amp; access control
-          </p>
-        </div>
+        <GlobalStyle />
 
-        <button onClick={openCreateDrawer} style={primaryBtnStyle}>
-          <Plus size={16} />
-          Add User
-        </button>
-      </div>
-
-      {/* STATS */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 14,
-          marginBottom: 22,
-        }}
-      >
-        {statCards.map((c) => {
-          const Icon = c.icon;
-          return (
-            <div key={c.key} style={statCardStyle}>
-              <div>
-                <p style={{ color: "#64748B", fontSize: 12.5, margin: 0, fontWeight: 500 }}>
-                  {c.label}
-                </p>
-                <h3 style={{ fontSize: 26, fontWeight: 700, color: "#0F172A", margin: "6px 0 0" }}>
-                  {c.value}
-                </h3>
-              </div>
-              <div
-                style={{
-                  width: 42,
-                  height: 42,
-                  borderRadius: 12,
-                  background: c.tintBg,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <Icon size={20} color={c.tint} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* SEARCH + FILTERS */}
-      <div style={panelStyle}>
+        {/* HEADER */}
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "1.4fr 1fr 1fr auto",
-            gap: 10,
-          }}
-          className="filters-grid"
-        >
-          <div style={{ position: "relative" }}>
-            <Search
-              size={16}
-              style={{
-                position: "absolute",
-                left: 12,
-                top: "50%",
-                transform: "translateY(-50%)",
-                color: "#94A3B8",
-                pointerEvents: "none",
-              }}
-            />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search name or email…"
-              style={{ ...inputStyle, paddingLeft: 36 }}
-            />
-          </div>
-
-          <Select
-            value={roleFilter || undefined}
-            placeholder="All Roles"
-            allowClear
-            onChange={(v) => setRoleFilter(v || "")}
-            options={ROLE_OPTIONS}
-            style={{ width: "100%" }}
-            size="large"
-          />
-
-          <Select
-            value={statusFilter || undefined}
-            placeholder="All Status"
-            allowClear
-            onChange={(v) => setStatusFilter(v || "")}
-            options={STATUS_OPTIONS}
-            style={{ width: "100%" }}
-            size="large"
-          />
-
-          <button
-            onClick={() => {
-              setSearch("");
-              setRoleFilter("");
-              setStatusFilter("");
-            }}
-            style={ghostBtnStyle}
-          >
-            <RotateCcw size={14} />
-            Reset
-          </button>
-        </div>
-      </div>
-
-      {/* TABLE */}
-      <div style={{ ...panelStyle, padding: 0, overflow: "hidden" }}>
-        <div
-          style={{
-            padding: "16px 20px",
-            borderBottom: "1px solid #F1F5F9",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            flexWrap: "wrap",
+            gap: 16,
+            marginBottom: 28,
           }}
         >
-          <h2 style={{ fontSize: 15.5, fontWeight: 700, color: "#0F172A", margin: 0 }}>
-            User Directory
-          </h2>
-          <Badge
-            count={filteredUsers.length}
-            showZero
-            style={{ backgroundColor: "#ECFEFF", color: "#0E7490", fontWeight: 600 }}
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  background: T.lime,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 8px 18px -6px rgba(215,254,99,0.45)",
+                }}
+              >
+                <Users size={18} color="#121212" />
+              </div>
+              <h1 style={{ fontSize: 22, fontWeight: 700, color: T.text, margin: 0, letterSpacing: -0.3 }}>
+                User Master
+              </h1>
+            </div>
+            <p style={{ color: T.textMuted, fontSize: 13.5, margin: "6px 0 0 50px" }}>
+              Enterprise user management &amp; access control
+            </p>
+          </div>
+
+          <button onClick={openCreateDrawer} style={primaryBtnStyle}>
+            <Plus size={16} />
+            Add User
+          </button>
+        </div>
+
+        {/* STATS */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 14,
+            marginBottom: 22,
+          }}
+        >
+          {statCards.map((c) => {
+            const Icon = c.icon;
+            return (
+              <div key={c.key} style={statCardStyle}>
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.05)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Icon size={18} color={T.lime} />
+                </div>
+                <div>
+                  <p style={{ color: T.textMuted, fontSize: 12, margin: 0, fontWeight: 500 }}>
+                    {c.label}
+                  </p>
+                  <h3 style={{ fontSize: 25, fontWeight: 700, color: T.text, margin: "4px 0 0" }}>
+                    {c.value}
+                  </h3>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* SEARCH + FILTERS */}
+        <div style={panelStyle}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.5fr 1fr 1fr auto",
+              gap: 10,
+            }}
+            className="filters-grid"
+          >
+            <div style={{ position: "relative" }}>
+              <Search
+                size={15}
+                style={{
+                  position: "absolute",
+                  left: 14,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: T.textFaint,
+                  pointerEvents: "none",
+                }}
+              />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="Search name or email…"
+                style={{ ...pillInputStyle, paddingLeft: 38 }}
+              />
+            </div>
+
+            <Select
+              value={roleFilter || undefined}
+              placeholder="All Roles"
+              allowClear
+              suffixIcon={<ChevronDown size={14} color={T.textMuted} />}
+              onChange={(v) => setRoleFilter(v || "")}
+              options={ROLE_OPTIONS}
+              style={{ width: "100%", height: 42 }}
+            />
+
+            <Select
+              value={statusFilter || undefined}
+              placeholder="All Status"
+              allowClear
+              suffixIcon={<ChevronDown size={14} color={T.textMuted} />}
+              onChange={(v) => setStatusFilter(v || "")}
+              options={STATUS_OPTIONS}
+              style={{ width: "100%", height: 42 }}
+            />
+
+            <button
+              onClick={() => {
+                setSearch("");
+                setRoleFilter("");
+                setStatusFilter("");
+              }}
+              style={ghostBtnStyle}
+            >
+              <RotateCcw size={14} />
+              Reset
+            </button>
+          </div>
+        </div>
+
+        {/* TABLE */}
+        <div style={{ ...panelStyle, padding: 0, overflow: "hidden" }}>
+          <div
+            style={{
+              padding: "18px 22px",
+              borderBottom: `1px solid ${T.divider}`,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: T.text, margin: 0 }}>
+              User Directory
+            </h2>
+            <Badge
+              count={filteredUsers.length}
+              showZero
+              style={{ backgroundColor: T.limeSoft, color: T.lime, fontWeight: 700, boxShadow: "none" }}
+            />
+          </div>
+
+          <Table
+            dataSource={filteredUsers}
+            columns={columns}
+            rowKey="_id"
+            loading={{
+              spinning: tableLoading,
+              indicator: <Spin size="large" />,
+            }}
+            pagination={{ pageSize: 8, hideOnSinglePage: true }}
+            onRow={(user) => ({
+              onClick: () => openUserModal(user),
+              style: { cursor: "pointer" },
+            })}
+            locale={{
+              emptyText: (
+                <div style={{ padding: "48px 0" }}>
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={
+                      <span style={{ color: T.textMuted }}>
+                        No users found. Create a new user to get started.
+                      </span>
+                    }
+                  />
+                </div>
+              ),
+            }}
           />
         </div>
 
-        <Table
-          dataSource={filteredUsers}
-          columns={columns}
-          rowKey="_id"
-          loading={{
-            spinning: tableLoading,
-            indicator: <Spin size="large" />,
-          }}
-          pagination={{ pageSize: 8, hideOnSinglePage: true }}
-          onRow={(user) => ({
-            onClick: () => openUserModal(user),
-            style: { cursor: "pointer" },
-          })}
-          locale={{
-            emptyText: (
-              <div style={{ padding: "48px 0" }}>
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={
-                    <span style={{ color: "#64748B" }}>
-                      No users found. Create a new user to get started.
-                    </span>
-                  }
-                />
-              </div>
-            ),
-          }}
-        />
-      </div>
-
-      {/* CREATE / EDIT DRAWER */}
-      <Drawer
-        title={
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 9,
-                background: editId ? "#FFFBEB" : "#ECFEFF",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {editId ? (
-                <Pencil size={15} color="#B45309" />
-              ) : (
-                <Plus size={15} color="#0E7490" />
-              )}
-            </div>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#0F172A" }}>
-              {editId ? "Update User" : "Create User"}
-            </span>
-          </div>
-        }
-        placement="right"
-        width={420}
-        open={isDrawerOpen}
-        onClose={closeDrawer}
-        closeIcon={<X size={18} />}
-        styles={{ body: { padding: 24 } }}
-        footer={
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={closeDrawer} style={{ ...ghostBtnStyle, flex: 1, justifyContent: "center" }}>
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveUser}
-              disabled={loading}
-              style={{ ...primaryBtnStyle, flex: 1.4, justifyContent: "center", opacity: loading ? 0.7 : 1 }}
-            >
-              {loading ? "Saving…" : editId ? "Update User" : "Save User"}
-            </button>
-          </div>
-        }
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Field label="Full Name" required>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Aarav Sharma"
-              style={inputStyle}
-            />
-          </Field>
-
-          <Field label="Email Address" required>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@company.com"
-              style={inputStyle}
-            />
-          </Field>
-
-          <Field label="Password" hint={editId ? "Leave blank to keep current password" : undefined}>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              style={inputStyle}
-            />
-          </Field>
-
-          <Field label="Role" required>
-            <Select
-              value={role}
-              onChange={(v) => setRole(v)}
-              options={ROLE_OPTIONS}
-              style={{ width: "100%" }}
-              size="large"
-            />
-          </Field>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Field label="Location" required>
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="e.g. Pune"
-                style={inputStyle}
-              />
-            </Field>
-
-            <Field label="Plant" required>
-              <input
-                type="text"
-                value={plant}
-                onChange={(e) => setPlant(e.target.value)}
-                placeholder="e.g. Plant 3"
-                style={inputStyle}
-              />
-            </Field>
-          </div>
-
-          <Field label="Status">
-            <Select
-              value={status}
-              onChange={(v) => setStatus(v)}
-              options={STATUS_OPTIONS}
-              style={{ width: "100%" }}
-              size="large"
-            />
-          </Field>
-        </div>
-      </Drawer>
-
-      {/* DETAILS / INLINE-EDIT MODAL */}
-      <Modal
-        open={isModalOpen}
-        onCancel={closeModal}
-        footer={null}
-        width={620}
-        closeIcon={<X size={18} />}
-        styles={{ body: { padding: 0 } }}
-      >
-        {selectedUser && (
+        {/* CREATE / EDIT — centered modal (replaces side drawer) */}
+        <Modal
+          open={isDrawerOpen}
+          onCancel={closeDrawer}
+          footer={null}
+          width={480}
+          closeIcon={<X size={18} color="#1A1A1A" />}
+          centered
+          styles={{ body: { padding: 0 }, content: { padding: 0, borderRadius: 22, overflow: "hidden" } }}
+        >
           <div>
-            {/* modal header */}
             <div
               style={{
-                background: "linear-gradient(135deg,#0E7490,#155E75)",
-                padding: "28px 28px 22px",
-                borderRadius: "8px 8px 0 0",
-                color: "#fff",
+                background: "#F2F2EC",
+                padding: "26px 28px 20px",
+                borderBottom: "1px solid #E4E4DC",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <Avatar
-                  size={52}
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
                   style={{
-                    background: "rgba(255,255,255,0.18)",
-                    fontWeight: 700,
-                    fontSize: 18,
-                    border: "2px solid rgba(255,255,255,0.35)",
+                    width: 36,
+                    height: 36,
+                    borderRadius: 11,
+                    background: editId ? "#FFE9B8" : "#E2F4A8",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
-                  {initials(selectedUser.name)}
-                </Avatar>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  {isModalEditing ? (
+                  {editId ? <Pencil size={16} color="#92660C" /> : <Plus size={16} color="#3F6B0A" />}
+                </div>
+                <span style={{ fontSize: 17, fontWeight: 700, color: "#161616" }}>
+                  {editId ? "Update User" : "Create New User"}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ padding: 28, background: "#FAFAF8" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <Field label="Full Name" required>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Aarav Sharma"
+                    style={lightInputStyle}
+                  />
+                </Field>
+
+                <Field label="Email Address" required>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@company.com"
+                    style={lightInputStyle}
+                  />
+                </Field>
+
+                <Field label="Password" hint={editId ? "Leave blank to keep current password" : undefined}>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    style={lightInputStyle}
+                  />
+                </Field>
+
+                <Field label="Role" required>
+                  <Select
+                    value={role}
+                    onChange={(v) => setRole(v)}
+                    options={ROLE_OPTIONS}
+                    style={{ width: "100%" }}
+                    size="large"
+                  />
+                </Field>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <Field label="Location" required>
                     <input
-                      value={modalDraft?.name || ""}
-                      onChange={(e) =>
-                        setModalDraft((d) => ({ ...d, name: e.target.value }))
-                      }
-                      style={{
-                        ...inputStyle,
-                        background: "rgba(255,255,255,0.12)",
-                        border: "1px solid rgba(255,255,255,0.35)",
-                        color: "#fff",
-                        fontWeight: 700,
-                        fontSize: 16,
-                      }}
-                      placeholder="Full name"
+                      type="text"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      placeholder="e.g. Pune"
+                      style={lightInputStyle}
                     />
-                  ) : (
-                    <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700 }}>
-                      {selectedUser.name}
-                    </h2>
-                  )}
-                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                    <RoleTag role={isModalEditing ? modalDraft?.role : selectedUser.role} />
-                    <StatusTag status={isModalEditing ? modalDraft?.status : selectedUser.status} />
+                  </Field>
+
+                  <Field label="Plant" required>
+                    <input
+                      type="text"
+                      value={plant}
+                      onChange={(e) => setPlant(e.target.value)}
+                      placeholder="e.g. Plant 3"
+                      style={lightInputStyle}
+                    />
+                  </Field>
+                </div>
+
+                <Field label="Status">
+                  <Select
+                    value={status}
+                    onChange={(v) => setStatus(v)}
+                    options={STATUS_OPTIONS}
+                    style={{ width: "100%" }}
+                    size="large"
+                  />
+                </Field>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 26 }}>
+                <button onClick={closeDrawer} style={{ ...lightGhostBtnStyle, flex: 1, justifyContent: "center" }}>
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveUser}
+                  disabled={loading}
+                  style={{ ...limeBtnStyle, flex: 1.4, justifyContent: "center", opacity: loading ? 0.7 : 1 }}
+                >
+                  {loading ? "Saving…" : editId ? "Update User" : "Save User"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+
+        {/* DETAILS / INLINE-EDIT MODAL — floating light card over the dark canvas */}
+        <Modal
+          open={isModalOpen}
+          onCancel={closeModal}
+          footer={null}
+          width={640}
+          closeIcon={<X size={18} color="#1A1A1A" />}
+          centered
+          styles={{ body: { padding: 0 }, content: { padding: 0, borderRadius: 24, overflow: "hidden" } }}
+        >
+          {selectedUser && (
+            <div style={{ background: "#FAFAF8" }}>
+              {/* modal header */}
+              <div
+                style={{
+                  background: "#F2F2EC",
+                  padding: "30px 30px 24px",
+                  borderBottom: "1px solid #E4E4DC",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <Avatar
+                    size={54}
+                    style={{
+                      background: T.lime,
+                      color: "#161616",
+                      fontWeight: 700,
+                      fontSize: 18,
+                    }}
+                  >
+                    {initials(selectedUser.name)}
+                  </Avatar>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    {isModalEditing ? (
+                      <input
+                        value={modalDraft?.name || ""}
+                        onChange={(e) =>
+                          setModalDraft((d) => ({ ...d, name: e.target.value }))
+                        }
+                        style={{
+                          ...lightInputStyle,
+                          fontWeight: 700,
+                          fontSize: 16,
+                        }}
+                        placeholder="Full name"
+                      />
+                    ) : (
+                      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#161616" }}>
+                        {selectedUser.name}
+                      </h2>
+                    )}
+                    <div style={{ display: "flex", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
+                      <LightRoleTag role={isModalEditing ? modalDraft?.role : selectedUser.role} />
+                      <LightStatusTag status={isModalEditing ? modalDraft?.status : selectedUser.status} />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* modal body */}
-            <div style={{ padding: 28 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <DetailField
-                  icon={Mail}
-                  label="Email Address"
-                  editing={isModalEditing}
-                  value={modalDraft?.email}
-                  displayValue={selectedUser.email}
-                  onChange={(v) => setModalDraft((d) => ({ ...d, email: v }))}
-                  type="email"
-                />
-                <DetailField
-                  icon={Lock}
-                  label="Password"
-                  editing={isModalEditing}
-                  value={modalDraft?.password}
-                  displayValue="••••••••"
-                  onChange={(v) => setModalDraft((d) => ({ ...d, password: v }))}
-                  type="password"
-                  placeholder="Leave blank to keep current"
-                />
-                <DetailField
-                  icon={MapPin}
-                  label="Location"
-                  editing={isModalEditing}
-                  value={modalDraft?.location}
-                  displayValue={selectedUser.location}
-                  onChange={(v) => setModalDraft((d) => ({ ...d, location: v }))}
-                />
-                <DetailField
-                  icon={Building2}
-                  label="Plant"
-                  editing={isModalEditing}
-                  value={modalDraft?.plant}
-                  displayValue={selectedUser.plant}
-                  onChange={(v) => setModalDraft((d) => ({ ...d, plant: v }))}
-                />
+              {/* modal body */}
+              <div style={{ padding: 30 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <DetailField
+                    icon={Mail}
+                    label="Email Address"
+                    editing={isModalEditing}
+                    value={modalDraft?.email}
+                    displayValue={selectedUser.email}
+                    onChange={(v) => setModalDraft((d) => ({ ...d, email: v }))}
+                    type="email"
+                  />
+                  <DetailField
+                    icon={Lock}
+                    label="Password"
+                    editing={isModalEditing}
+                    value={modalDraft?.password}
+                    displayValue="••••••••"
+                    onChange={(v) => setModalDraft((d) => ({ ...d, password: v }))}
+                    type="password"
+                    placeholder="Leave blank to keep current"
+                  />
+                  <DetailField
+                    icon={MapPin}
+                    label="Location"
+                    editing={isModalEditing}
+                    value={modalDraft?.location}
+                    displayValue={selectedUser.location}
+                    onChange={(v) => setModalDraft((d) => ({ ...d, location: v }))}
+                  />
+                  <DetailField
+                    icon={Building2}
+                    label="Plant"
+                    editing={isModalEditing}
+                    value={modalDraft?.plant}
+                    displayValue={selectedUser.plant}
+                    onChange={(v) => setModalDraft((d) => ({ ...d, plant: v }))}
+                  />
 
-                <div>
-                  <FieldLabelRow icon={Shield} label="Role" />
-                  {isModalEditing ? (
-                    <Select
-                      value={modalDraft?.role}
-                      onChange={(v) => setModalDraft((d) => ({ ...d, role: v }))}
-                      options={ROLE_OPTIONS}
-                      style={{ width: "100%", marginTop: 6 }}
-                      size="large"
-                    />
-                  ) : (
-                    <div style={detailValueBoxStyle}>{selectedUser.role}</div>
-                  )}
+                  <div>
+                    <LightFieldLabelRow icon={Shield} label="Role" />
+                    {isModalEditing ? (
+                      <Select
+                        value={modalDraft?.role}
+                        onChange={(v) => setModalDraft((d) => ({ ...d, role: v }))}
+                        options={ROLE_OPTIONS}
+                        style={{ width: "100%", marginTop: 6 }}
+                        size="large"
+                      />
+                    ) : (
+                      <div style={lightDetailValueBoxStyle}>{selectedUser.role}</div>
+                    )}
+                  </div>
+
+                  <div>
+                    <LightFieldLabelRow icon={Check} label="Status" />
+                    {isModalEditing ? (
+                      <Select
+                        value={modalDraft?.status}
+                        onChange={(v) => setModalDraft((d) => ({ ...d, status: v }))}
+                        options={STATUS_OPTIONS}
+                        style={{ width: "100%", marginTop: 6 }}
+                        size="large"
+                      />
+                    ) : (
+                      <div style={lightDetailValueBoxStyle}>{selectedUser.status}</div>
+                    )}
+                  </div>
                 </div>
 
-                <div>
-                  <FieldLabelRow icon={Check} label="Status" />
+                <div
+                  style={{
+                    marginTop: 20,
+                    paddingTop: 16,
+                    borderTop: "1px solid #E4E4DC",
+                    fontSize: 12.5,
+                    color: "#8A8A82",
+                  }}
+                >
+                  Created{" "}
+                  {selectedUser.createdAt
+                    ? new Date(selectedUser.createdAt).toLocaleString()
+                    : "—"}
+                </div>
+
+                {/* actions */}
+                <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
                   {isModalEditing ? (
-                    <Select
-                      value={modalDraft?.status}
-                      onChange={(v) => setModalDraft((d) => ({ ...d, status: v }))}
-                      options={STATUS_OPTIONS}
-                      style={{ width: "100%", marginTop: 6 }}
-                      size="large"
-                    />
+                    <>
+                      <button
+                        onClick={() => {
+                          setModalDraft(selectedUser);
+                          setIsModalEditing(false);
+                        }}
+                        style={{ ...lightGhostBtnStyle, flex: 1, justifyContent: "center" }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleModalSave}
+                        disabled={modalSaving}
+                        style={{
+                          ...limeBtnStyle,
+                          flex: 1.4,
+                          justifyContent: "center",
+                          opacity: modalSaving ? 0.7 : 1,
+                        }}
+                      >
+                        {modalSaving ? "Saving…" : "Save Changes"}
+                      </button>
+                    </>
                   ) : (
-                    <div style={detailValueBoxStyle}>{selectedUser.status}</div>
+                    <>
+                      <button
+                        onClick={closeModal}
+                        style={{ ...lightGhostBtnStyle, flex: 1, justifyContent: "center" }}
+                      >
+                        Close
+                      </button>
+                      <button
+                        onClick={() => setIsModalEditing(true)}
+                        style={{ ...amberBtnStyle, flex: 1, justifyContent: "center" }}
+                      >
+                        <Pencil size={14} />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          closeModal();
+                          handleDelete(selectedUser._id);
+                        }}
+                        style={{ ...lightDangerBtnStyle, flex: 1, justifyContent: "center" }}
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
-
-              <div
-                style={{
-                  marginTop: 18,
-                  paddingTop: 16,
-                  borderTop: "1px solid #F1F5F9",
-                  fontSize: 12.5,
-                  color: "#94A3B8",
-                }}
-              >
-                Created{" "}
-                {selectedUser.createdAt
-                  ? new Date(selectedUser.createdAt).toLocaleString()
-                  : "—"}
-              </div>
-
-              {/* actions */}
-              <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
-                {isModalEditing ? (
-                  <>
-                    <button
-                      onClick={() => {
-                        setModalDraft(selectedUser);
-                        setIsModalEditing(false);
-                      }}
-                      style={{ ...ghostBtnStyle, flex: 1, justifyContent: "center" }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleModalSave}
-                      disabled={modalSaving}
-                      style={{
-                        ...primaryBtnStyle,
-                        flex: 1.4,
-                        justifyContent: "center",
-                        opacity: modalSaving ? 0.7 : 1,
-                      }}
-                    >
-                      {modalSaving ? "Saving…" : "Save Changes"}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={closeModal}
-                      style={{ ...ghostBtnStyle, flex: 1, justifyContent: "center" }}
-                    >
-                      Close
-                    </button>
-                    <button
-                      onClick={() => setIsModalEditing(true)}
-                      style={{ ...amberBtnStyle, flex: 1, justifyContent: "center" }}
-                    >
-                      <Pencil size={14} />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => {
-                        closeModal();
-                        handleDelete(selectedUser._id);
-                      }}
-                      style={{ ...dangerBtnStyle, flex: 1, justifyContent: "center" }}
-                    >
-                      <Trash2 size={14} />
-                      Delete
-                    </button>
-                  </>
-                )}
-              </div>
             </div>
-          </div>
-        )}
-      </Modal>
-    </div>
+          )}
+        </Modal>
+      </div>
+    </ConfigProvider>
   );
 }
 
@@ -1048,15 +1082,15 @@ export default function UserMasterPage() {
 
 const Field = ({ label, required, hint, children }) => (
   <div>
-    <FieldLabelRow label={label} required={required} />
+    <LightFieldLabelRow label={label} required={required} />
     {children}
     {hint && (
-      <p style={{ fontSize: 11.5, color: "#94A3B8", margin: "4px 0 0" }}>{hint}</p>
+      <p style={{ fontSize: 11.5, color: "#9A9A92", margin: "4px 0 0" }}>{hint}</p>
     )}
   </div>
 );
 
-const FieldLabelRow = ({ icon: Icon, label, required }) => (
+const LightFieldLabelRow = ({ icon: Icon, label, required }) => (
   <label
     style={{
       display: "flex",
@@ -1064,56 +1098,115 @@ const FieldLabelRow = ({ icon: Icon, label, required }) => (
       gap: 6,
       fontSize: 12.5,
       fontWeight: 600,
-      color: "#475569",
+      color: "#5A5A52",
       marginBottom: 6,
     }}
   >
-    {Icon && <Icon size={13} color="#94A3B8" />}
+    {Icon && <Icon size={13} color="#9A9A92" />}
     {label}
-    {required && <span style={{ color: "#F43F5E" }}>*</span>}
+    {required && <span style={{ color: "#D14343" }}>*</span>}
   </label>
 );
 
 const DetailField = ({ icon, label, editing, value, displayValue, onChange, type = "text", placeholder }) => (
   <div>
-    <FieldLabelRow icon={icon} label={label} />
+    <LightFieldLabelRow icon={icon} label={label} />
     {editing ? (
       <input
         type={type}
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        style={inputStyle}
+        style={lightInputStyle}
       />
     ) : (
-      <div style={detailValueBoxStyle}>{displayValue || "—"}</div>
+      <div style={lightDetailValueBoxStyle}>{displayValue || "—"}</div>
     )}
   </div>
 );
 
+const LIGHT_ROLE_STYLE = {
+  SUPER_ADMIN: { bg: "#FBE0E0", fg: "#B5302F" },
+  PLANT_ADMIN: { bg: "#DCF5F0", fg: "#1A7A68" },
+  MANAGER: { bg: "#EAE2FB", fg: "#6B3FA0" },
+  USER: { bg: "#ECECE6", fg: "#5A5A52" },
+};
+
+const LightRoleTag = ({ role }) => {
+  const s = LIGHT_ROLE_STYLE[role] || LIGHT_ROLE_STYLE.USER;
+  return (
+    <span
+      style={{
+        background: s.bg,
+        color: s.fg,
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: 0.3,
+        padding: "4px 10px",
+        borderRadius: 999,
+        textTransform: "uppercase",
+      }}
+    >
+      {role?.replace("_", " ")}
+    </span>
+  );
+};
+
+const LightStatusTag = ({ status }) => {
+  const active = status === "Active";
+  return (
+    <span
+      style={{
+        background: active ? "#E2F4A8" : "#FBE0E0",
+        color: active ? "#3F6B0A" : "#B5302F",
+        fontSize: 11,
+        fontWeight: 700,
+        padding: "4px 10px",
+        borderRadius: 999,
+      }}
+    >
+      {status}
+    </span>
+  );
+};
+
 const GlobalStyle = () => (
   <style>{`
+    .ant-table {
+      background: transparent !important;
+    }
     .ant-table-thead > tr > th {
-      background: #F8FAFC !important;
-      color: #64748B !important;
-      font-size: 11.5px !important;
+      background: transparent !important;
+      color: #6E6E66 !important;
+      font-size: 11px !important;
       font-weight: 700 !important;
       text-transform: uppercase;
-      letter-spacing: 0.4px;
-      border-bottom: 1px solid #F1F5F9 !important;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #262626 !important;
     }
     .ant-table-thead > tr > th::before { display: none !important; }
     .ant-table-tbody > tr > td {
-      border-bottom: 1px solid #F8FAFC !important;
+      background: transparent !important;
+      border-bottom: 1px solid #212121 !important;
       padding: 12px 16px !important;
     }
     .ant-table-tbody > tr:hover > td {
-      background: #F0FDFF !important;
+      background: #1C1C1C !important;
+    }
+    .ant-table-placeholder:hover > td {
+      background: transparent !important;
     }
     .ant-select-selector {
-      border-radius: 10px !important;
-      border-color: #E2E8F0 !important;
+      border-radius: 12px !important;
+      border-color: #2A2A2A !important;
+      height: 42px !important;
+      display: flex !important;
+      align-items: center !important;
     }
+    .ant-modal-content {
+      box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6) !important;
+    }
+    .ant-empty-description { color: #8C8C8C; }
     @media (max-width: 900px) {
       .filters-grid { grid-template-columns: 1fr !important; }
     }
@@ -1123,32 +1216,44 @@ const GlobalStyle = () => (
 /* ---------------- inline style tokens ---------------- */
 
 const panelStyle = {
-  background: "#fff",
-  border: "1px solid #F1F5F9",
-  borderRadius: 18,
+  background: T.panel,
+  border: `1px solid ${T.panelBorder}`,
+  borderRadius: 20,
   padding: 18,
-  boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
   marginBottom: 18,
 };
 
 const statCardStyle = {
-  background: "#fff",
-  border: "1px solid #F1F5F9",
-  borderRadius: 18,
+  background: T.panel,
+  border: `1px solid ${T.panelBorder}`,
+  borderRadius: 20,
   padding: "18px 20px",
   display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+  alignItems: "center",
+  gap: 14,
 };
 
-const inputStyle = {
+const pillInputStyle = {
   width: "100%",
-  border: "1px solid #E2E8F0",
+  border: `1px solid ${T.cardBorder}`,
+  borderRadius: 999,
+  padding: "10px 14px",
+  fontSize: 13.5,
+  color: T.text,
+  outline: "none",
+  background: T.card,
+  boxSizing: "border-box",
+  fontFamily: "inherit",
+  height: 42,
+};
+
+const lightInputStyle = {
+  width: "100%",
+  border: "1px solid #E0E0D8",
   borderRadius: 10,
   padding: "10px 12px",
   fontSize: 13.5,
-  color: "#0F172A",
+  color: "#161616",
   outline: "none",
   background: "#fff",
   boxSizing: "border-box",
@@ -1156,13 +1261,13 @@ const inputStyle = {
   height: 40,
 };
 
-const detailValueBoxStyle = {
-  background: "#F8FAFC",
-  border: "1px solid #F1F5F9",
+const lightDetailValueBoxStyle = {
+  background: "#F2F2EC",
+  border: "1px solid #E4E4DC",
   borderRadius: 10,
   padding: "10px 12px",
   fontSize: 13.5,
-  color: "#0F172A",
+  color: "#161616",
   fontWeight: 500,
   minHeight: 40,
   boxSizing: "border-box",
@@ -1172,26 +1277,54 @@ const detailValueBoxStyle = {
 };
 
 const primaryBtnStyle = {
-  background: "linear-gradient(135deg,#0E7490,#0891B2)",
-  color: "#fff",
+  background: T.lime,
+  color: "#121212",
   border: "none",
+  padding: "11px 20px",
+  borderRadius: 999,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  fontSize: 13.5,
+  fontWeight: 700,
+  cursor: "pointer",
+  boxShadow: "0 10px 24px -8px rgba(215,254,99,0.45)",
+};
+
+const limeBtnStyle = {
+  background: T.lime,
+  color: "#121212",
+  border: "none",
+  padding: "10px 16px",
+  borderRadius: 10,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  fontSize: 13.5,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const ghostBtnStyle = {
+  background: T.card,
+  color: T.textMuted,
+  border: `1px solid ${T.cardBorder}`,
   padding: "10px 18px",
-  borderRadius: 12,
+  borderRadius: 999,
   display: "inline-flex",
   alignItems: "center",
   gap: 8,
   fontSize: 13.5,
   fontWeight: 600,
   cursor: "pointer",
-  boxShadow: "0 6px 16px -4px rgba(14,116,144,0.4)",
 };
 
-const ghostBtnStyle = {
+const lightGhostBtnStyle = {
   background: "#fff",
-  color: "#475569",
-  border: "1px solid #E2E8F0",
+  color: "#5A5A52",
+  border: "1px solid #E0E0D8",
   padding: "10px 16px",
-  borderRadius: 12,
+  borderRadius: 10,
   display: "inline-flex",
   alignItems: "center",
   gap: 8,
@@ -1201,11 +1334,11 @@ const ghostBtnStyle = {
 };
 
 const amberBtnStyle = {
-  background: "#FFFBEB",
-  color: "#B45309",
-  border: "1px solid #FEF3C7",
+  background: "#FFF3D6",
+  color: "#92660C",
+  border: "1px solid #FFE9B8",
   padding: "10px 16px",
-  borderRadius: 12,
+  borderRadius: 10,
   display: "inline-flex",
   alignItems: "center",
   gap: 8,
@@ -1214,12 +1347,12 @@ const amberBtnStyle = {
   cursor: "pointer",
 };
 
-const dangerBtnStyle = {
-  background: "#FFF1F2",
-  color: "#BE123C",
-  border: "1px solid #FFE4E6",
+const lightDangerBtnStyle = {
+  background: "#FBE0E0",
+  color: "#B5302F",
+  border: "1px solid #F5C6C6",
   padding: "10px 16px",
-  borderRadius: 12,
+  borderRadius: 10,
   display: "inline-flex",
   alignItems: "center",
   gap: 8,

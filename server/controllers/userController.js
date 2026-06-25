@@ -1,11 +1,20 @@
 import User from "../models/UserModel.js";
+import bcrypt from "bcryptjs";
 
 
 // CREATE USER
 export const createUser = async (req, res) => {
   try {
 
-    const user = await User.create(req.body);
+    const hashedPassword = await bcrypt.hash(
+      req.body.password,
+      10
+      );
+
+      const user = await User.create({
+      ...req.body,
+      password: hashedPassword,
+      });
 
     return res.status(201).json(user);
 

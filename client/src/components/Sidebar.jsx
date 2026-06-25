@@ -1,4 +1,9 @@
-import { Link, useLocation } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+} from "react-router-dom";
+
+import { useAuth } from "../context/AuthContext";
 
 import {
   LayoutDashboard,
@@ -18,40 +23,126 @@ export default function Sidebar({
   collapsed,
   setCollapsed,
 }) {
+
+  const { user } = useAuth();
+
   const location = useLocation();
 
-  const menuItems = [
+  const allMenus = {
+
+    SUPER_ADMIN: [
+
+    
     {
       name: "Dashboard",
       path: "/",
       icon: LayoutDashboard,
     },
+
     {
       name: "Plant Master",
       path: "/plant-master",
       icon: Factory,
     },
+
     {
       name: "Model Master",
       path: "/model-master",
       icon: Boxes,
     },
+
     {
       name: "Part Master",
       path: "/part-master",
       icon: Package,
     },
+
     {
       name: "User Master",
       path: "/user-master",
       icon: Users,
     },
+
     {
       name: "Production",
       path: "/production-entry",
       icon: ClipboardList,
     },
-  ];
+    
+
+    ],
+
+    PLANT_ADMIN: [
+
+    
+    {
+      name: "Dashboard",
+      path: "/",
+      icon: LayoutDashboard,
+    },
+
+    {
+      name: "Model Master",
+      path: "/model-master",
+      icon: Boxes,
+    },
+
+    {
+      name: "Part Master",
+      path: "/part-master",
+      icon: Package,
+    },
+
+    {
+      name: "Production",
+      path: "/production-entry",
+      icon: ClipboardList,
+    },
+    
+
+    ],
+
+    MANAGER: [
+
+    
+    {
+      name: "Dashboard",
+      path: "/",
+      icon: LayoutDashboard,
+    },
+
+    {
+      name: "Production",
+      path: "/production-entry",
+      icon: ClipboardList,
+    },
+
+    {
+      name: "User Master",
+      path: "/user-master",
+      icon: Users,
+    },
+    
+
+    ],
+
+    USER: [
+
+    
+    {
+      name: "Production",
+      path: "/production-entry",
+      icon: ClipboardList,
+    },
+    
+
+    ],
+
+    };
+
+    const menuItems =
+    allMenus[user?.role] || [];
+
 
   return (
     <aside
