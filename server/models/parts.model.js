@@ -2,36 +2,29 @@ import mongoose from "mongoose";
 
 const partSchema = new mongoose.Schema(
   {
-    model: {
-      type: String,
+    modelId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Model",
       required: true,
     },
-
     partName: {
       type: String,
       required: true,
+      trim: true,
     },
-
     area: {
       type: Number,
-      required: true,
     },
-
     partsPerHanger: {
       type: Number,
-      required: true,
     },
-
     status: {
       type: String,
+      enum: ["Active", "Inactive"],
       default: "Active",
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-const Part = mongoose.model("Part", partSchema);
-
-export default Part;
+export default mongoose.model("Part", partSchema);

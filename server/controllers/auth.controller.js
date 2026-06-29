@@ -1,18 +1,18 @@
-import User from "../models/UserModel.js";
+import User from "../models/users.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 // LOGIN USER
 export const loginUser = async (req, res) => {
   try {
+    
     const { email, password } = req.body;
-
     // CHECK USER
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-
+    
     // CHECK PASSWORD
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -55,7 +55,6 @@ export const loginUser = async (req, res) => {
 
 export const authenticateMe = async (req, res) => {
     try {
-      console.log("REQ ENTER IN /AUTH/ME")
       const user = await User.findById( req.user.id).select("-password");
 
       if (!user) {

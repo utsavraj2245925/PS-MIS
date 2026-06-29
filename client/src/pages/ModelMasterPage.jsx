@@ -1,1410 +1,574 @@
-import { useState, useEffect, useMemo } from "react";
-import axios from "axios";
-
+import { useState, useEffect, useMemo, useCallback } from "react";
+import axiosInstance from "../api/axiosInstance";
 import {
-  Box,
-  Plus,
-  Search,
-  Download,
-  Pencil,
-  Trash2,
-  X,
-  CheckCircle2,
-  XCircle,
-  RefreshCcw,
+  Modal, Table, Avatar, Empty, Spin, message, Tooltip, Popconfirm, Badge,
+} from "antd";
+import {
+  Box, Plus, Search, Pencil, Trash2, X, Factory, RotateCcw,
 } from "lucide-react";
 
-const API_BASE =
-  "http://localhost:4000/api/models";
+/* ─────────────────────────────────────────────
+   HELPERS
+───────────────────────────────────────────── */
+const initials = (name = "") =>
+  name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
 
+const PALETTE = ["#0E7490","#7E22CE","#B45309","#15803D","#BE123C","#4338CA","#0369A1","#9D174D"];
+const avatarColor = (seed = "") => {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = seed.charCodeAt(i) + ((h << 5) - h);
+  return PALETTE[Math.abs(h) % PALETTE.length];
+};
+
+/* ─────────────────────────────────────────────
+   FIELD LABEL  (matches UserMaster / PlantMaster)
+───────────────────────────────────────────── */
+const FieldLabel = ({ icon: Icon, label, required }) => (
+  <label style={{
+    display: "flex", alignItems: "center", gap: 5,
+    fontSize: 11.5, fontWeight: 600, color: "#475569",
+    marginBottom: 5, letterSpacing: 0.2,
+  }}>
+    {Icon && <Icon size={12} color="#94A3B8" />}
+    {label}
+    {required && <span style={{ color: "#F43F5E" }}>*</span>}
+  </label>
+);
+
+/* ─────────────────────────────────────────────
+   ICON BUTTON
+───────────────────────────────────────────── */
+const IconBtn = ({ onClick, bg, fg, title, children }) => (
+  <Tooltip title={title}>
+    <button onClick={onClick} style={{
+      background: bg, color: fg, border: "none",
+      width: 30, height: 30, borderRadius: 8,
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      cursor: "pointer", flexShrink: 0,
+    }}>
+      {children}
+    </button>
+  </Tooltip>
+);
+
+/* ─────────────────────────────────────────────
+   VALUE BOX
+───────────────────────────────────────────── */
+const ValueBox = ({ children }) => (
+  <div style={{
+    background: "#F8FAFC", border: "1px solid #F1F5F9",
+    borderRadius: 10, padding: "9px 12px",
+    fontSize: 13, color: "#0F172A", fontWeight: 500,
+    minHeight: 38, display: "flex", alignItems: "center",
+  }}>
+    {children || "—"}
+  </div>
+);
+
+/* ─────────────────────────────────────────────
+   STATUS TAG
+───────────────────────────────────────────── */
+const StatusTag = ({ status }) => {
+  const active = status === "active" || status === "Active";
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 5,
+      background: active ? "#DCFCE7" : "#FFF1F2",
+      color: active ? "#15803D" : "#BE123C",
+      fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+    }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: 999,
+        background: active ? "#22C55E" : "#F43F5E", flexShrink: 0,
+      }} />
+      {status || "Active"}
+    </span>
+  );
+};
+
+/* ─────────────────────────────────────────────
+   MAIN PAGE
+───────────────────────────────────────────── */
 export default function ModelMasterPage() {
 
-  /* =========================
-      FORM STATES
-  ========================= */
+  const [models,      setModels]      = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [search,      setSearch]      = useState("");
+  const [formOpen,    setFormOpen]    = useState(false);
+  const [editingId,   setEditingId]   = useState(null);
+  const [modelName,   setModelName]   = useState("");
+  const [isSaving,    setIsSaving]    = useState(false);
+  const [detailOpen,  setDetailOpen]  = useState(false);
+  const [selected,    setSelected]    = useState(null);
 
-  const [modelName, setModelName] =
-    useState("");
-
-  const [modelCode, setModelCode] =
-    useState("");
-
-  const [status, setStatus] =
-    useState("Active");
-
-  const [isSaving, setIsSaving] =
-    useState(false);
-
-  /* =========================
-      FILTER STATES
-  ========================= */
-
-  const [searchTerm, setSearchTerm] =
-    useState("");
-
-  const [statusFilter,
-    setStatusFilter] =
-    useState("All");
-
-  /* =========================
-      DATA STATES
-  ========================= */
-
-  const [models, setModels] =
-    useState([]);
-
-  const [isLoading,
-    setIsLoading] =
-    useState(true);
-
-  const [loadError,
-    setLoadError] =
-    useState("");
-
-  /* =========================
-      MODALS
-  ========================= */
-
-  const [isAddOpen,
-    setIsAddOpen] =
-    useState(false);
-
-  const [isEditOpen,
-    setIsEditOpen] =
-    useState(false);
-
-  const [selectedModel,
-    setSelectedModel] =
-    useState(null);
-
-  const [isViewOpen,
-    setIsViewOpen] =
-    useState(false);
-
-  const [editingModel,
-    setEditingModel] =
-    useState(null);
-
-  const [isUpdating,
-    setIsUpdating] =
-    useState(false);
-
-  const [deleteTarget,
-    setDeleteTarget] =
-    useState(null);
-
-  const [isDeleting,
-    setIsDeleting] =
-    useState(false);
-
-  /* =========================
-      TOAST
-  ========================= */
-
-  const [toast, setToast] =
-    useState(null);
-
-  const showToast = (
-    message,
-    type = "success"
-  ) => {
-    setToast({
-      message,
-      type,
-    });
-
-    window.clearTimeout(
-      showToast._t
-    );
-
-    showToast._t =
-      window.setTimeout(
-        () => setToast(null),
-        3000
-      );
-  };
-
-  /* =========================
-      FETCH MODELS
-  ========================= */
-
-  const fetchModels =
-    async () => {
-
-      setIsLoading(true);
-      setLoadError("");
-
-      try {
-
-        const res =
-          await axios.get(
-            API_BASE
-          );
-
-        setModels(
-          res.data?.data || []
-        );
-
-      } catch (error) {
-
-        console.error(
-          "Error fetching models:",
-          error
-        );
-
-        setLoadError(
-          error.response?.data
-            ?.message ||
-            "Unable to load models"
-        );
-
-      } finally {
-
-        setIsLoading(false);
-
-      }
-    };
-
-  useEffect(() => {
-    fetchModels();
+  /* ── Fetch ── */
+  const fetchModels = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await axiosInstance.get("/models");
+      setModels(res.data?.models || []);
+    } catch (err) {
+      message.error(err?.response?.data?.message || "Failed to load models");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  /* =========================
-      SAVE MODEL
-  ========================= */
+  useEffect(() => { fetchModels(); }, [fetchModels]);
 
-  const handleSaveModel =
-    async () => {
+  /* ── Form helpers ── */
+  const resetForm = () => { setEditingId(null); setModelName(""); };
 
-      if (
-        !modelName.trim() ||
-        !modelCode.trim()
-      ) {
+  const openAdd = () => { resetForm(); setFormOpen(true); };
 
-        showToast(
-          "Please fill Model Name & Model Code",
-          "error"
-        );
-
-        return;
-      }
-
-      setIsSaving(true);
-
-      try {
-
-        await axios.post(
-          API_BASE,
-          {
-            modelName:
-              modelName.trim(),
-
-            modelCode:
-              modelCode.trim(),
-
-            status,
-          }
-        );
-
-        setModelName("");
-        setModelCode("");
-        setStatus("Active");
-
-        await fetchModels();
-
-        setIsAddOpen(false);
-
-        showToast(
-          "Model Added Successfully"
-        );
-
-      } catch (error) {
-
-        showToast(
-          error.response?.data
-            ?.message ||
-            "Error Saving Model",
-          "error"
-        );
-
-      } finally {
-
-        setIsSaving(false);
-
-      }
-    };
-
-  /* =========================
-      EDIT MODEL
-  ========================= */
-
-  const handleEdit = (
-    model
-  ) => {
-
-    setEditingModel({
-      ...model,
-    });
-
-    setIsEditOpen(true);
+  const openEdit = (model) => {
+    setEditingId(model._id);
+    setModelName(model.modelName || "");
+    setFormOpen(true);
   };
 
-  const handleUpdate =
-    async () => {
-
-      if (
-        !editingModel.modelName.trim() ||
-        !editingModel.modelCode.trim()
-      ) {
-
-        showToast(
-          "Model Name & Model Code required",
-          "error"
-        );
-
-        return;
-      }
-
-      setIsUpdating(true);
-
-      try {
-
-        await axios.put(
-          `${API_BASE}/${editingModel._id}`,
-          {
-            modelName:
-              editingModel.modelName.trim(),
-
-            modelCode:
-              editingModel.modelCode.trim(),
-
-            status:
-              editingModel.status,
-          }
-        );
-
-        await fetchModels();
-
-        setIsEditOpen(false);
-        setEditingModel(null);
-
-        showToast(
-          "Model Updated Successfully"
-        );
-
-      } catch (error) {
-
-        showToast(
-          error.response?.data
-            ?.message ||
-            "Update Failed",
-          "error"
-        );
-
-      } finally {
-
-        setIsUpdating(false);
-
-      }
-    };
-
-  /* =========================
-      DELETE MODEL
-  ========================= */
-
-  const requestDelete =
-    (model) => {
-      setDeleteTarget(model);
-    };
-
-  const confirmDelete =
-    async () => {
-
-      if (!deleteTarget)
-        return;
-
-      setIsDeleting(true);
-
-      try {
-
-        await axios.delete(
-          `${API_BASE}/${deleteTarget._id}`
-        );
-
-        await fetchModels();
-
-        showToast(
-          "Model Deleted Successfully"
-        );
-
-      } catch (error) {
-
-        showToast(
-          error.response?.data
-            ?.message ||
-            "Delete Failed",
-          "error"
-        );
-
-      } finally {
-
-        setDeleteTarget(null);
-        setIsDeleting(false);
-
-      }
-    };
-
-  /* =========================
-      EXPORT
-  ========================= */
-
-  const handleExport = () => {
-
-    if (
-      models.length === 0
-    ) {
-
-      showToast(
-        "No Models Available",
-        "error"
-      );
-
+  /* ── Save ── */
+  const handleSave = async () => {
+    if (!modelName.trim()) {
+      message.warning("Model name is required");
       return;
     }
+    setIsSaving(true);
+    try {
+      // plantId is resolved server-side from the JWT — we only send modelName
+      const payload = { modelName: modelName.trim() };
 
-    const headers = [
-      "Model Name",
-      "Model Code",
-      "Status",
-    ];
-
-    const escapeCsv =
-      (val) =>
-        `"${String(
-          val ?? ""
-        ).replace(
-          /"/g,
-          '""'
-        )}"`;
-
-    const rows =
-      models.map((m) => [
-        escapeCsv(
-          m.modelName
-        ),
-        escapeCsv(
-          m.modelCode
-        ),
-        escapeCsv(
-          m.status
-        ),
-      ]);
-
-    const csv =
-      [headers, ...rows]
-        .map((row) =>
-          row.join(",")
-        )
-        .join("\n");
-
-    const blob =
-      new Blob([csv], {
-        type:
-          "text/csv;charset=utf-8;",
-      });
-
-    const url =
-      window.URL.createObjectURL(
-        blob
-      );
-
-    const a =
-      document.createElement(
-        "a"
-      );
-
-    a.href = url;
-    a.download =
-      "models.csv";
-
-    a.click();
-
-    window.URL.revokeObjectURL(
-      url
-    );
+      if (editingId) {
+        await axiosInstance.put(`/models/${editingId}`, payload);
+        message.success("Model updated");
+      } else {
+        await axiosInstance.post("/models", payload);
+        message.success("Model created");
+      }
+      setFormOpen(false);
+      resetForm();
+      fetchModels();
+    } catch (err) {
+      message.error(err?.response?.data?.message || "Save failed");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  /* =========================
-      FILTERED DATA
-  ========================= */
+  /* ── Delete ── */
+  const handleDelete = async (id) => {
+    try {
+      await axiosInstance.delete(`/models/${id}`);
+      message.success("Model deleted");
+      fetchModels();
+    } catch (err) {
+      message.error(err?.response?.data?.message || "Delete failed");
+    }
+  };
 
-  const filteredModels =
-    useMemo(() => {
-
-      return models.filter(
-        (model) => {
-
-          const term =
-            searchTerm.toLowerCase();
-
-          const searchMatch =
-            model.modelName
-              ?.toLowerCase()
-              .includes(term) ||
-            model.modelCode
-              ?.toLowerCase()
-              .includes(term);
-
-          const statusMatch =
-            statusFilter ===
-              "All" ||
-            model.status ===
-              statusFilter;
-
-          return (
-            searchMatch &&
-            statusMatch
-          );
-        }
-      );
-
-    }, [
-      models,
-      searchTerm,
-      statusFilter,
-    ]);
-
-  const activeCount =
-    useMemo(
-      () =>
-        models.filter(
-          (m) =>
-            m.status ===
-            "Active"
-        ).length,
-      [models]
+  /* ── Filter ── */
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return models.filter((m) =>
+      m.modelName?.toLowerCase().includes(q) ||
+      m.plantId?.plantName?.toLowerCase().includes(q)
     );
-
-  const inactiveCount =
-    useMemo(
-      () =>
-        models.filter(
-          (m) =>
-            m.status ===
-            "Inactive"
-        ).length,
-      [models]
-    );
-
-  return (
-
-    <div className="min-h-screen bg-white p-4 lg:p-5">
-
-      {/* TOAST */}
-
-      {toast && (
-
-        <div
-          className={`fixed top-5 right-5 z-50 px-4 py-2 rounded-xl text-sm font-medium shadow-xl ${
-            toast.type ===
-            "error"
-              ? "bg-red-600 text-white"
-              : "bg-emerald-600 text-white"
-          }`}
-        >
-          {toast.message}
-        </div>
-
-      )}
-
-      {/* HEADER */}
-
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-5">
-
-        <div className="flex items-center gap-3">
-
-          <div className="bg-cyan-700 text-white p-3 rounded-xl">
-            <Box size={22} />
-          </div>
-
-          <div>
-
-            <h1 className="text-xl font-bold text-slate-800">
-              Model Master
-            </h1>
-
-            <p className="text-xs text-slate-500">
-              Product Model Management
-            </p>
-
-          </div>
-
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-
-          <button
-            onClick={fetchModels}
-            className="h-10 px-4 border rounded-lg text-sm flex items-center gap-2 hover:bg-slate-50"
-          >
-            <RefreshCcw size={15} />
-            Refresh
-          </button>
-
-          <button
-            onClick={handleExport}
-            className="h-10 px-4 border rounded-lg text-sm flex items-center gap-2 hover:bg-slate-50"
-          >
-            <Download size={15} />
-            Export
-          </button>
-
-          <button
-            onClick={() =>
-              setIsAddOpen(true)
-            }
-            className="h-10 px-4 bg-cyan-700 text-white rounded-lg text-sm flex items-center gap-2"
-          >
-            <Plus size={15} />
-            Add Model
-          </button>
-
-        </div>
-
-      </div>
-
-      {/* KPI CARDS */}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-
-        <div className="bg-white border rounded-xl p-4">
-
-          <div className="flex justify-between items-center">
-
-            <div>
-
-              <p className="text-xs text-slate-500">
-                Total Models
-              </p>
-
-              <h2 className="text-2xl font-bold mt-1 text-cyan-700">
-                {models.length}
-              </h2>
-
-            </div>
-
-            <Box
-              size={24}
-              className="text-cyan-700"
-            />
-
-          </div>
-
-        </div>
-
-        <div className="bg-white border rounded-xl p-4">
-
-          <div className="flex justify-between items-center">
-
-            <div>
-
-              <p className="text-xs text-slate-500">
-                Active
-              </p>
-
-              <h2 className="text-2xl font-bold mt-1 text-emerald-600">
-                {activeCount}
-              </h2>
-
-            </div>
-
-            <CheckCircle2
-              size={24}
-              className="text-emerald-600"
-            />
-
-          </div>
-
-        </div>
-
-        <div className="bg-white border rounded-xl p-4">
-
-          <div className="flex justify-between items-center">
-
-            <div>
-
-              <p className="text-xs text-slate-500">
-                Inactive
-              </p>
-
-              <h2 className="text-2xl font-bold mt-1 text-red-600">
-                {inactiveCount}
-              </h2>
-
-            </div>
-
-            <XCircle
-              size={24}
-              className="text-red-600"
-            />
-
-          </div>
-
-        </div>
-
-      </div>
-
-            {/* =====================================
-          ADD MODEL MODAL
-      ===================================== */}
-
-      {isAddOpen && (
-
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-
-          <div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden">
-
-            <div className="flex items-center justify-between px-5 py-4 border-b">
-
-              <div>
-
-                <h2 className="text-lg font-semibold text-slate-800">
-                  Add New Model
-                </h2>
-
-                <p className="text-xs text-slate-500">
-                  Create a new product model
-                </p>
-
-              </div>
-
-              <button
-                onClick={() =>
-                  setIsAddOpen(false)
-                }
-                className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center"
-              >
-                <X size={18} />
-              </button>
-
-            </div>
-
-            <div className="p-5">
-
-              <div className="grid md:grid-cols-2 gap-4">
-
-                <div>
-
-                  <label className="block text-xs font-medium text-slate-600 mb-2">
-                    Model Name
-                  </label>
-
-                  <input
-                    value={modelName}
-                    onChange={(e) =>
-                      setModelName(
-                        e.target.value
-                      )
-                    }
-                    placeholder="Enter Model Name"
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
-                  />
-
-                </div>
-
-                <div>
-
-                  <label className="block text-xs font-medium text-slate-600 mb-2">
-                    Model Code
-                  </label>
-
-                  <input
-                    value={modelCode}
-                    onChange={(e) =>
-                      setModelCode(
-                        e.target.value
-                      )
-                    }
-                    placeholder="Enter Model Code"
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
-                  />
-
-                </div>
-
-                <div className="md:col-span-2">
-
-                  <label className="block text-xs font-medium text-slate-600 mb-2">
-                    Status
-                  </label>
-
-                  <select
-                    value={status}
-                    onChange={(e) =>
-                      setStatus(
-                        e.target.value
-                      )
-                    }
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
-                  >
-                    <option>
-                      Active
-                    </option>
-
-                    <option>
-                      Inactive
-                    </option>
-
-                  </select>
-
-                </div>
-
-              </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-
-                <button
-                  onClick={() =>
-                    setIsAddOpen(false)
-                  }
-                  className="h-10 px-5 border rounded-lg text-sm"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  onClick={
-                    handleSaveModel
-                  }
-                  disabled={isSaving}
-                  className="h-10 px-5 bg-cyan-700 text-white rounded-lg text-sm disabled:opacity-50"
-                >
-                  {isSaving
-                    ? "Saving..."
-                    : "Save Model"}
-                </button>
-
-              </div>
-
-            </div>
-
-          </div>
-
-        </div>
-
-      )}
-
-      {/* =====================================
-          SEARCH & FILTER
-      ===================================== */}
-
-      <div className="bg-white border rounded-xl p-4 mb-5">
-
-        <div className="grid md:grid-cols-2 gap-4">
-
-          <div className="relative">
-
-            <Search
-              size={16}
-              className="absolute left-3 top-3 text-slate-400"
-            />
-
-            <input
-              value={searchTerm}
-              onChange={(e) =>
-                setSearchTerm(
-                  e.target.value
-                )
-              }
-              placeholder="Search model name or code..."
-              className="w-full h-10 pl-10 pr-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
-            />
-
-          </div>
-
-          <select
-            value={statusFilter}
-            onChange={(e) =>
-              setStatusFilter(
-                e.target.value
-              )
-            }
-            className="h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
-          >
-            <option value="All">
-              All Status
-            </option>
-
-            <option value="Active">
-              Active
-            </option>
-
-            <option value="Inactive">
-              Inactive
-            </option>
-
-          </select>
-
-        </div>
-
-      </div>
-
-      {/* =====================================
-          MODEL TABLE
-      ===================================== */}
-
-      <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
-
-        <div className="flex justify-between items-center px-4 py-3 border-b">
-
-          <h2 className="font-semibold text-slate-800">
-            Model List
-          </h2>
-
-          <span className="text-xs text-slate-500">
-            {filteredModels.length} of {models.length} Models
-          </span>
-
-        </div>
-
-        {isLoading ? (
-
-          <div className="text-center py-14 text-slate-400 text-sm">
-            Loading Models...
-          </div>
-
-        ) : loadError ? (
-
-          <div className="text-center py-14">
-
-            <p className="text-red-600 text-sm mb-3">
-              {loadError}
-            </p>
-
-            <button
-              onClick={fetchModels}
-              className="bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm"
-            >
-              Retry
-            </button>
-
-          </div>
-
-        ) : filteredModels.length === 0 ? (
-
-          <div className="text-center py-14 text-slate-400 text-sm">
-            No Models Found
-          </div>
-
-        ) : (
-
-          <div className="overflow-x-auto max-h-[550px]">
-
-            <table className="w-full text-sm">
-
-              <thead className="sticky top-0 bg-slate-50 z-10">
-
-                <tr>
-
-                  <th className="text-left px-4 py-3 font-semibold">
-                    Model Name
-                  </th>
-
-                  <th className="text-left px-4 py-3 font-semibold">
-                    Model Code
-                  </th>
-
-                  <th className="text-left px-4 py-3 font-semibold">
-                    Status
-                  </th>
-
-                  <th className="text-left px-4 py-3 font-semibold">
-                    Actions
-                  </th>
-
-                </tr>
-
-              </thead>
-
-              <tbody>
-
-                {filteredModels.map(
-                  (model) => (
-
-                    <tr
-                      key={model._id}
-                      onClick={() => {
-                        setSelectedModel(
-                          model
-                        );
-                        setIsViewOpen(
-                          true
-                        );
-                      }}
-                      className="border-t hover:bg-slate-50 cursor-pointer transition"
-                    >
-
-                      <td className="px-4 py-3 font-medium text-slate-800">
-                        {model.modelName}
-                      </td>
-
-                      <td className="px-4 py-3 font-mono text-slate-600">
-                        {model.modelCode}
-                      </td>
-
-                      <td className="px-4 py-3">
-
-                        {model.status ===
-                        "Active" ? (
-
-                          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium">
-
-                            <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-
-                            Active
-
-                          </span>
-
-                        ) : (
-
-                          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">
-
-                            <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-
-                            Inactive
-
-                          </span>
-
-                        )}
-
-                      </td>
-
-                      <td
-                        className="px-4 py-3"
-                        onClick={(e) =>
-                          e.stopPropagation()
-                        }
-                      >
-
-                        <div className="flex gap-2">
-
-                          <button
-                            onClick={() =>
-                              handleEdit(
-                                model
-                              )
-                            }
-                            className="w-8 h-8 rounded-lg bg-amber-50 hover:bg-amber-100 flex items-center justify-center"
-                          >
-                            <Pencil
-                              size={15}
-                              className="text-amber-600"
-                            />
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              requestDelete(
-                                model
-                              )
-                            }
-                            className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 flex items-center justify-center"
-                          >
-                            <Trash2
-                              size={15}
-                              className="text-red-600"
-                            />
-                          </button>
-
-                        </div>
-
-                      </td>
-
-                    </tr>
-
-                  )
-                )}
-
-              </tbody>
-
-            </table>
-
-          </div>
-
-        )}
-
-      </div>
-
-            {/* =====================================
-          VIEW DETAILS MODAL
-      ===================================== */}
-
-      {isViewOpen &&
-        selectedModel && (
-
-          <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => {
-              setIsViewOpen(false);
-              setSelectedModel(null);
+  }, [models, search]);
+
+  /* ── Stats ── */
+  const totalModels  = models.length;
+  const activeModels = models.filter((m) => m.status === "Active").length;
+
+  /* ── Table columns ── */
+  const columns = [
+    {
+      title: "Model",
+      dataIndex: "modelName",
+      key: "modelName",
+      render: (_, m) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Avatar
+            size={34}
+            style={{
+              background: avatarColor(m.modelName),
+              fontWeight: 700, fontSize: 12, flexShrink: 0,
             }}
           >
+            {initials(m.modelName)}
+          </Avatar>
+          <span style={{ fontWeight: 600, fontSize: 13, color: "#0F172A" }}>
+            {m.modelName}
+          </span>
+        </div>
+      ),
+    },
+    {
+      title: "Status",
+      key: "status",
+      width: 110,
+      render: (_, m) => <StatusTag status={m.status} />,
+    },
+    {
+      title: "Created",
+      key: "createdAt",
+      width: 120,
+      render: (_, m) => (
+        <span style={{ fontSize: 11.5, color: "#94A3B8" }}>
+          {m.createdAt ? new Date(m.createdAt).toLocaleDateString() : "—"}
+        </span>
+      ),
+    },
+    {
+      title: "",
+      key: "actions",
+      width: 80,
+      render: (_, m) => (
+        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
+          <IconBtn title="Edit" bg="#FFFBEB" fg="#B45309" onClick={() => openEdit(m)}>
+            <Pencil size={13} />
+          </IconBtn>
+          <Popconfirm
+            title="Delete this model?"
+            description="This action cannot be undone."
+            okText="Delete" okButtonProps={{ danger: true }}
+            onConfirm={() => handleDelete(m._id)}
+          >
+            <button style={{
+              background: "#FFF1F2", color: "#BE123C", border: "none",
+              width: 30, height: 30, borderRadius: 8,
+              display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+            }}>
+              <Trash2 size={13} />
+            </button>
+          </Popconfirm>
+        </div>
+      ),
+    },
+  ];
 
-            <div
-              className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden"
-              onClick={(e) =>
-                e.stopPropagation()
-              }
-            >
+  /* ─────────────────────────────────────────────
+     RENDER
+  ───────────────────────────────────────────── */
+  return (
+    <div style={{
+      minHeight: "100vh", background: "#F8FAFC",
+      fontFamily: "'IBM Plex Sans', sans-serif", padding: "28px 32px",
+    }}>
+      <CSS />
 
-              <div className="flex items-center justify-between px-5 py-4 border-b">
-
-                <div>
-
-                  <h2 className="text-lg font-semibold text-slate-800">
-                    Model Details
-                  </h2>
-
-                  <p className="text-xs text-slate-500">
-                    Complete Model Information
-                  </p>
-
-                </div>
-
-                <button
-                  onClick={() => {
-                    setIsViewOpen(false);
-                    setSelectedModel(null);
-                  }}
-                  className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center"
-                >
-                  <X size={18} />
-                </button>
-
-              </div>
-
-              <div className="p-5">
-
-                <div className="grid md:grid-cols-2 gap-4">
-
-                  <div className="border rounded-xl p-4">
-
-                    <p className="text-xs text-slate-500 mb-1">
-                      Model Name
-                    </p>
-
-                    <h3 className="font-semibold text-slate-800">
-                      {selectedModel.modelName}
-                    </h3>
-
-                  </div>
-
-                  <div className="border rounded-xl p-4">
-
-                    <p className="text-xs text-slate-500 mb-1">
-                      Model Code
-                    </p>
-
-                    <h3 className="font-semibold text-slate-800">
-                      {selectedModel.modelCode}
-                    </h3>
-
-                  </div>
-
-                  <div className="border rounded-xl p-4">
-
-                    <p className="text-xs text-slate-500 mb-1">
-                      Status
-                    </p>
-
-                    <h3
-                      className={`font-semibold ${
-                        selectedModel.status ===
-                        "Active"
-                          ? "text-emerald-600"
-                          : "text-red-600"
-                      }`}
-                    >
-                      {selectedModel.status}
-                    </h3>
-
-                  </div>
-
-                  <div className="border rounded-xl p-4">
-
-                    <p className="text-xs text-slate-500 mb-1">
-                      Database ID
-                    </p>
-
-                    <h3 className="font-mono text-sm text-slate-700 break-all">
-                      {selectedModel._id}
-                    </h3>
-
-                  </div>
-
-                  {selectedModel.createdAt && (
-
-                    <div className="border rounded-xl p-4">
-
-                      <p className="text-xs text-slate-500 mb-1">
-                        Created On
-                      </p>
-
-                      <h3 className="font-semibold text-slate-800">
-                        {new Date(
-                          selectedModel.createdAt
-                        ).toLocaleString()}
-                      </h3>
-
-                    </div>
-
-                  )}
-
-                  {selectedModel.updatedAt && (
-
-                    <div className="border rounded-xl p-4">
-
-                      <p className="text-xs text-slate-500 mb-1">
-                        Last Updated
-                      </p>
-
-                      <h3 className="font-semibold text-slate-800">
-                        {new Date(
-                          selectedModel.updatedAt
-                        ).toLocaleString()}
-                      </h3>
-
-                    </div>
-
-                  )}
-
-                </div>
-
-              </div>
-
+      {/* ── HEADER ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 11,
+              background: "linear-gradient(135deg,#0E7490,#0891B2)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 6px 14px -4px rgba(14,116,144,0.4)",
+            }}>
+              <Box size={18} color="#fff" />
             </div>
-
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0F172A", margin: 0 }}>
+              Model Master
+            </h1>
           </div>
-
-        )}
-
-      {/* =====================================
-          EDIT MODAL
-      ===================================== */}
-
-      {isEditOpen &&
-        editingModel && (
-
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-
-            <div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden">
-
-              <div className="flex justify-between items-center px-5 py-4 border-b">
-
-                <div>
-
-                  <h2 className="text-lg font-semibold text-slate-800">
-                    Edit Model
-                  </h2>
-
-                  <p className="text-xs text-slate-500">
-                    Update Model Information
-                  </p>
-
-                </div>
-
-                <button
-                  onClick={() => {
-                    setIsEditOpen(false);
-                    setEditingModel(null);
-                  }}
-                  className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center"
-                >
-                  <X size={18} />
-                </button>
-
-              </div>
-
-              <div className="p-5">
-
-                <div className="grid gap-4">
-
-                  <div>
-
-                    <label className="block text-xs font-medium text-slate-600 mb-2">
-                      Model Name
-                    </label>
-
-                    <input
-                      value={
-                        editingModel.modelName
-                      }
-                      onChange={(e) =>
-                        setEditingModel({
-                          ...editingModel,
-                          modelName:
-                            e.target.value,
-                        })
-                      }
-                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
-                    />
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-xs font-medium text-slate-600 mb-2">
-                      Model Code
-                    </label>
-
-                    <input
-                      value={
-                        editingModel.modelCode
-                      }
-                      onChange={(e) =>
-                        setEditingModel({
-                          ...editingModel,
-                          modelCode:
-                            e.target.value,
-                        })
-                      }
-                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
-                    />
-
-                  </div>
-
-                  <div>
-
-                    <label className="block text-xs font-medium text-slate-600 mb-2">
-                      Status
-                    </label>
-
-                    <select
-                      value={
-                        editingModel.status
-                      }
-                      onChange={(e) =>
-                        setEditingModel({
-                          ...editingModel,
-                          status:
-                            e.target.value,
-                        })
-                      }
-                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
-                    >
-                      <option>
-                        Active
-                      </option>
-
-                      <option>
-                        Inactive
-                      </option>
-
-                    </select>
-
-                  </div>
-
-                </div>
-
-                <div className="flex justify-end gap-3 mt-6">
-
-                  <button
-                    onClick={() => {
-                      setIsEditOpen(false);
-                      setEditingModel(null);
-                    }}
-                    disabled={isUpdating}
-                    className="h-10 px-5 border rounded-lg text-sm"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    onClick={handleUpdate}
-                    disabled={isUpdating}
-                    className="h-10 px-5 bg-cyan-700 text-white rounded-lg text-sm disabled:opacity-50"
-                  >
-                    {isUpdating
-                      ? "Updating..."
-                      : "Update Model"}
-                  </button>
-
-                </div>
-
-              </div>
-
-            </div>
-
-          </div>
-
-        )}
-
-      {/* =====================================
-          DELETE MODAL
-      ===================================== */}
-
-      {deleteTarget && (
-
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
-
-            <div className="p-5">
-
-              <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mb-4">
-
-                <Trash2
-                  size={24}
-                  className="text-red-600"
-                />
-
-              </div>
-
-              <h2 className="text-lg font-semibold text-slate-800 mb-2">
-                Delete Model?
-              </h2>
-
-              <p className="text-sm text-slate-500 mb-6">
-                Are you sure you want to delete
-                <span className="font-semibold text-slate-700">
-                  {" "}
-                  {deleteTarget.modelName}
-                </span>
-                ? This action cannot be undone.
-              </p>
-
-              <div className="flex justify-end gap-3">
-
-                <button
-                  onClick={() =>
-                    setDeleteTarget(null)
-                  }
-                  disabled={isDeleting}
-                  className="h-10 px-5 border rounded-lg text-sm"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  onClick={confirmDelete}
-                  disabled={isDeleting}
-                  className="h-10 px-5 bg-red-600 text-white rounded-lg text-sm disabled:opacity-50"
-                >
-                  {isDeleting
-                    ? "Deleting..."
-                    : "Delete"}
-                </button>
-
-              </div>
-
-            </div>
-
-          </div>
-
+          <p style={{ color: "#64748B", fontSize: 13, margin: "4px 0 0 46px" }}>
+            Product model registry for your plant
+          </p>
         </div>
 
-      )}
+        <button onClick={openAdd} style={S.primaryBtn}>
+          <Plus size={15} /> Add Model
+        </button>
+      </div>
 
+      {/* ── STAT CARDS ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14, marginBottom: 20 }}>
+        {[
+          { label: "Total Models",  value: totalModels,  icon: Box,     tint: "#0E7490", bg: "#ECFEFF" },
+          { label: "Active Models", value: activeModels, icon: Factory, tint: "#15803D", bg: "#F0FDF4" },
+        ].map((c) => {
+          const Icon = c.icon;
+          return (
+            <div key={c.label} style={S.statCard}>
+              <div>
+                <p style={{ color: "#64748B", fontSize: 12, margin: 0, fontWeight: 500 }}>{c.label}</p>
+                <h3 style={{ fontSize: 28, fontWeight: 700, color: "#0F172A", margin: "4px 0 0" }}>{c.value}</h3>
+              </div>
+              <div style={{
+                width: 40, height: 40, borderRadius: 11,
+                background: c.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                <Icon size={19} color={c.tint} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── SEARCH ── */}
+      <div style={S.panel}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }} className="mm-filters">
+          <div style={{ position: "relative" }}>
+            <Search size={15} style={{
+              position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)",
+              color: "#94A3B8", pointerEvents: "none",
+            }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search model name or plant…"
+              style={{ ...S.input, paddingLeft: 34 }}
+            />
+          </div>
+          <button onClick={() => setSearch("")} style={S.ghostBtn}>
+            <RotateCcw size={14} /> Reset
+          </button>
+        </div>
+      </div>
+
+      {/* ── TABLE ── */}
+      <div style={{ ...S.panel, padding: 0, overflow: "hidden" }}>
+        <div style={{
+          padding: "14px 20px", borderBottom: "1px solid #F1F5F9",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: "#0F172A", margin: 0 }}>Model Directory</h2>
+          <Badge
+            count={filtered.length} showZero
+            style={{ backgroundColor: "#ECFEFF", color: "#0E7490", fontWeight: 600 }}
+          />
+        </div>
+        <Table
+          dataSource={filtered} columns={columns} rowKey="_id"
+          loading={{ spinning: loading, indicator: <Spin size="large" /> }}
+          pagination={{ pageSize: 10, hideOnSinglePage: true }}
+          onRow={(m) => ({
+            onClick: () => { setSelected(m); setDetailOpen(true); },
+            style: { cursor: "pointer" },
+          })}
+          locale={{
+            emptyText: (
+              <div style={{ padding: "48px 0" }}>
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={<span style={{ color: "#64748B" }}>No models yet. Click "Add Model" to create one.</span>} />
+              </div>
+            ),
+          }}
+        />
+      </div>
+
+      {/* ══════════════════════════════════════
+          ADD / EDIT MODAL
+      ══════════════════════════════════════ */}
+      <Modal
+        open={formOpen}
+        onCancel={() => { setFormOpen(false); resetForm(); }}
+        footer={null} centered destroyOnHidden mask={{closable:false}}
+        width={460} closeIcon={<X size={17} />}
+        styles={{ header: { padding: 0 }, body: { padding: 0 } }}
+      >
+        {/* Gradient header — matches UserMaster / PlantMaster */}
+        <div style={{
+          background: "linear-gradient(135deg,#0E7490,#155E75)",
+          padding: "20px 26px", borderRadius: "8px 8px 0 0",
+          display: "flex", alignItems: "center", gap: 12,
+        }}>
+          <div style={{
+            width: 34, height: 34, borderRadius: 10,
+            background: "rgba(255,255,255,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            {editingId ? <Pencil size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#fff" }}>
+              {editingId ? "Edit Model" : "Add New Model"}
+            </h2>
+            <p style={{ margin: 0, fontSize: 11.5, color: "rgba(255,255,255,0.65)", marginTop: 2 }}>
+              {editingId ? "Update the model name" : "Enter a model name to register it under your plant"}
+            </p>
+          </div>
+        </div>
+
+        <div style={{ padding: "24px 26px" }}>
+          <FieldLabel label="Model Name" required />
+          <input
+            value={modelName}
+            onChange={(e) => setModelName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+            placeholder="e.g. HE-Compressor-X1"
+            style={S.input}
+            autoFocus
+          />
+          <p style={{ fontSize: 11.5, color: "#94A3B8", margin: "8px 0 0" }}>
+            Plant will be assigned automatically from your account.
+          </p>
+        </div>
+
+        <div style={{
+          padding: "14px 26px", borderTop: "1px solid #F1F5F9",
+          display: "flex", justifyContent: "flex-end", gap: 10, background: "#FAFAFA",
+          borderRadius: "0 0 8px 8px",
+        }}>
+          <button onClick={() => { setFormOpen(false); resetForm(); }} style={S.ghostBtn}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={isSaving}
+            style={{ ...S.primaryBtn, opacity: isSaving ? 0.75 : 1 }}>
+            {isSaving ? "Saving…" : editingId ? "Update Model" : "Save Model"}
+          </button>
+        </div>
+      </Modal>
+
+      {/* ══════════════════════════════════════
+          DETAIL MODAL
+      ══════════════════════════════════════ */}
+      <Modal
+        open={detailOpen} onCancel={() => setDetailOpen(false)}
+        footer={null} width={460} closeIcon={<X size={17} />}
+        destroyOnHidden
+        styles={{ body: { padding: 0 } }}
+      >
+        {selected && (
+          <div>
+            {/* Gradient header */}
+            <div style={{
+              background: "linear-gradient(135deg,#0E7490,#155E75)",
+              padding: "22px 26px 20px", borderRadius: "8px 8px 0 0",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <Avatar size={46} style={{
+                  background: avatarColor(selected.modelName),
+                  fontWeight: 700, fontSize: 16,
+                  border: "2px solid rgba(255,255,255,0.35)", flexShrink: 0,
+                }}>
+                  {initials(selected.modelName)}
+                </Avatar>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#fff" }}>
+                    {selected.modelName}
+                  </h2>
+                  <div style={{ marginTop: 8 }}>
+                    <StatusTag status={selected.status} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ padding: "22px 26px" }}>
+
+              <div style={{ marginBottom: 14 }}>
+                <FieldLabel icon={Factory} label="Plant" />
+                <ValueBox>
+                  <Factory size={12} color="#94A3B8" style={{ marginRight: 6, flexShrink: 0 }} />
+                  {selected.plantId?.plantName || "—"}
+                </ValueBox>
+              </div>
+
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #F1F5F9", fontSize: 12, color: "#94A3B8" }}>
+                Created {selected.createdAt ? new Date(selected.createdAt).toLocaleString() : "—"}
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                <button onClick={() => setDetailOpen(false)}
+                  style={{ ...S.ghostBtn, flex: 1, justifyContent: "center" }}>
+                  Close
+                </button>
+                <button onClick={() => { setDetailOpen(false); openEdit(selected); }}
+                  style={{ ...S.amberBtn, flex: 1, justifyContent: "center" }}>
+                  <Pencil size={13} /> Edit
+                </button>
+                <Popconfirm
+                  title="Delete this model?"
+                  description="This action cannot be undone."
+                  okText="Delete" okButtonProps={{ danger: true }}
+                  onConfirm={() => { setDetailOpen(false); handleDelete(selected._id); }}
+                >
+                  <button style={{ ...S.dangerBtn, flex: 1, justifyContent: "center" }}>
+                    <Trash2 size={13} /> Delete
+                  </button>
+                </Popconfirm>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
-  
+
+/* ─────────────────────────────────────────────
+   GLOBAL CSS
+───────────────────────────────────────────── */
+const CSS = () => (
+  <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+    .ant-table-thead > tr > th {
+      background: #F8FAFC !important; color: #64748B !important;
+      font-size: 11px !important; font-weight: 700 !important;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      border-bottom: 1px solid #F1F5F9 !important;
+    }
+    .ant-table-thead > tr > th::before { display: none !important; }
+    .ant-table-tbody > tr > td {
+      border-bottom: 1px solid #F8FAFC !important;
+      padding: 11px 16px !important;
+    }
+    .ant-table-tbody > tr:hover > td { background: #F0FDFF !important; }
+    .ant-badge-count { box-shadow: none !important; }
+    .ant-pagination-item-active { border-color: #0E7490 !important; }
+    .ant-pagination-item-active a { color: #0E7490 !important; }
+    @media (max-width: 680px) {
+      .mm-filters { grid-template-columns: 1fr !important; }
+    }
+  `}</style>
+);
+
+/* ─────────────────────────────────────────────
+   STYLE TOKENS  (identical to UserMaster / PlantMaster)
+───────────────────────────────────────────── */
+const S = {
+  panel: {
+    background: "#fff", border: "1px solid #F1F5F9",
+    borderRadius: 18, padding: 18,
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)", marginBottom: 18,
+  },
+  statCard: {
+    background: "#fff", border: "1px solid #F1F5F9",
+    borderRadius: 18, padding: "18px 20px",
+    display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+    boxShadow: "0 1px 3px rgba(15,23,42,0.04)",
+  },
+  input: {
+    width: "100%", border: "1px solid #E2E8F0", borderRadius: 10,
+    padding: "9px 12px", fontSize: 13, color: "#0F172A",
+    outline: "none", background: "#F8FAFC", boxSizing: "border-box",
+    fontFamily: "inherit", height: 40,
+  },
+  primaryBtn: {
+    background: "linear-gradient(135deg,#0E7490,#0891B2)",
+    color: "#fff", border: "none", padding: "9px 18px",
+    borderRadius: 11, display: "inline-flex", alignItems: "center",
+    gap: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
+    boxShadow: "0 4px 14px -3px rgba(14,116,144,0.45)",
+  },
+  ghostBtn: {
+    background: "#fff", color: "#475569", border: "1px solid #E2E8F0",
+    padding: "9px 16px", borderRadius: 11,
+    display: "inline-flex", alignItems: "center",
+    gap: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
+  },
+  amberBtn: {
+    background: "#FFFBEB", color: "#B45309", border: "1px solid #FEF3C7",
+    padding: "9px 16px", borderRadius: 11,
+    display: "inline-flex", alignItems: "center",
+    gap: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
+  },
+  dangerBtn: {
+    background: "#FFF1F2", color: "#BE123C", border: "1px solid #FFE4E6",
+    padding: "9px 16px", borderRadius: 11,
+    display: "inline-flex", alignItems: "center",
+    gap: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
+  },
+};

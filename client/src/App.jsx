@@ -16,13 +16,13 @@ function App() {
 
   // Don't render any routes until auth is resolved
   // Prevents flash-redirect to /login on page reload
-  if (loading) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        Loading...
-      </div>
-    );
-  }
+  // if (loading) {
+  //   return (
+  //     <div className="h-screen flex items-center justify-center">
+  //       Loading...gtvtg
+  //     </div>
+  //   );
+  // }
 
   return (
     <Router>

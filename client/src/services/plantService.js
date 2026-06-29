@@ -1,14 +1,11 @@
-import axios from "axios";
+import axiosInstance from "./api";
 
-const API = "http://localhost:4000/api/plants";
+const API = "/plants";
 
-export const getPlants = () => axios.get(API);
+export const getPlants = () => axiosInstance.get(API);
 
-export const createPlant = (data) =>
-  axios.post(API, data);
+export const createPlant = (data) => axiosInstance.post(API, data);
 
-export const updatePlant = (id, data) =>
-  axios.put(`${API}/${id}`, data);
+export const updatePlant = (id, data) => axiosInstance.put(`/plants/${id}`, data);
 
-export const deletePlant = (id) =>
-  axios.delete(`${API}/${id}`);
+export const deletePlant = (id) => axiosInstance.delete(`${API}/${id}`);

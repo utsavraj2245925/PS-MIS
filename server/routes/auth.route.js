@@ -4,7 +4,7 @@ import {
   loginUser,
   logout,
   authenticateMe,
-} from "../controllers/authController.js";
+} from "../controllers/auth.controller.js";
 
 import  {isAuthenticated}  from "../Auth/isAuthenticated.js";
 
