@@ -1,26 +1,16 @@
 import mongoose from "mongoose";
 
-const rejectedSchema = new mongoose.Schema(
-    {
-      modelId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Model",
-      },
-      partId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "RejectionReasonMaster",
-      },
-      rejectedQnt:{
-        type:Number,
-        default: 0
-      },
-      rejectedType:{
-        type:String,
-        default: ''
-      }
-
+const rejectSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      unique: true,
     },
-    { timestamps: true }
-  );
+  },
+  { timestamps: true }
+);
 
-export default mongoose.model("Rejected", rejectedSchema);
+const Reject = mongoose.model("Reject", rejectSchema);
+export default Reject;

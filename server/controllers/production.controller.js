@@ -1,202 +1,331 @@
+import mongoose from "mongoose";
 import ProductionEntry from "../models/production.model.js";
-import DownTime      from "../models/downTime.model.js";
-import Consumable    from "../models/consumable.model.js";
-import Defect        from "../models/defects.model.js";
-import Rework        from "../models/rework.model.js";
-import Rejected      from "../models/reject.model.js";
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-const sum   = (arr, key)     => arr.reduce((acc, i) => acc + Number(i[key] || 0), 0);
-const ids   = (docs)         => docs.map((d) => d._id);
-const pct   = (n, d)         => d > 0 ? ((n / d) * 100).toFixed(2) : 0;
-const save  = (Model, arr)   => arr.length > 0 ? Model.insertMany(arr) : Promise.resolve([]);
-
-// ── CREATE ───────────────────────────────────────────────────────────────────
+// ======================================================
+// CREATE ENTRY
+// ======================================================
 
 export const createProductionEntry = async (req, res) => {
   try {
-    const {
-      userId, plantId, shiftId,
-      date, shift, location, plant, reportedBy, email,
-      requiredManpower, availableManpower,
-      productionEntries  = [],
-      plannedDowntime    = [],
-      unplannedDowntime  = [],
-      consumables        = [],
-      ptChemicals        = [],
-      powders            = [],
-      defects            = [],
-      reworks            = [],
-      rejections         = [],
-    } = req.body;
+    const body = req.body;
 
-    if (!date) return res.status(400).json({ success: false, message: "Production Date Required" });
+    if (!body.userId || !body.userName || !body.shift) {
+      return res.status(400).json({
+        success: false,
+        message: "userId, userName and shift are required",
+      });
+    }
 
-    // ── manpower ──────────────────────────────────────────────────────────────
-    const shortManpower = Number(requiredManpower || 0) - Number(availableManpower || 0);
+    if (!body.plantId || !body.modelId || !body.partId) {
+      return res.status(400).json({
+        success: false,
+        message: "plantId, modelId and partId are required",
+      });
+    }
 
-    // ── downtime ──────────────────────────────────────────────────────────────
-    const allDowntime = [
-      ...plannedDowntime.map((i)   => ({ ...i, downtimeCategory: "Planned"   })),
-      ...unplannedDowntime.map((i) => ({ ...i, downtimeCategory: "Unplanned" })),
-    ];
+    // Auto-calc short manpower
+    const requiredManpower = Number(body.requiredManpower) || 0;
+    const availableManpower = Number(body.availableManpower) || 0;
+    const shortManpower = Math.max(0, requiredManpower - availableManpower);
 
-    // ── persist child collections ─────────────────────────────────────────────
-    const [downtimeDocs, consumableDocs, chemicalDocs, powderDocs, defectDocs, reworkDocs, rejectionDocs] =
-      await Promise.all([
-        save(DownTime,   allDowntime),
-        save(Consumable, consumables),
-        save(PTChemical, ptChemicals),
-        save(Powder,     powders),
-        save(Defect,     defects),
-        save(Rework,     reworks),
-        save(Rejected,   rejections),
-      ]);
+    // Auto-calc downtime totals (recompute on server, don't trust client blindly)
+    const downtimes = Array.isArray(body.downtimes) ? body.downtimes : [];
+    const totalPlannedDowntime = downtimes
+      .filter((d) => d.type === "Planned")
+      .reduce((sum, d) => sum + (Number(d.duration) || 0), 0);
+    const totalUnplannedDowntime = downtimes
+      .filter((d) => d.type === "Unplanned")
+      .reduce((sum, d) => sum + (Number(d.duration) || 0), 0);
+    const totalDowntime = totalPlannedDowntime + totalUnplannedDowntime;
 
-    // ── OEE calculation ───────────────────────────────────────────────────────
-    const totalProduction = productionEntries.reduce((acc, m) =>
-      acc + (m.parts?.reduce((s, p) => s + Number(p.quantity || 0), 0) || 0), 0);
+    // Auto-calc rejected/rework qty from defects array if provided
+    const defects = Array.isArray(body.defects) ? body.defects : [];
+    const rejectedQty =
+      defects
+        .filter((d) => d.defectType === "Reject")
+        .reduce((sum, d) => sum + (Number(d.quantity) || 0), 0) ||
+      Number(body.rejectedQty) ||
+      0;
+    const reworkQty =
+      defects
+        .filter((d) => d.defectType === "Rework")
+        .reduce((sum, d) => sum + (Number(d.quantity) || 0), 0) ||
+      Number(body.reworkQty) ||
+      0;
 
-    const totalDefects          = sum(defects,     "defectQuantity");
-    const totalRejected         = sum(rejections,  "rejectedQuantity");
-    const totalDowntimeMinutes  = sum(allDowntime, "duration");
-
-    const availableTime  = 630;
-    const runtime        = availableTime - totalDowntimeMinutes;
-
-    const availability = pct(runtime,                                          availableTime);
-    const quality      = pct(totalProduction - totalDefects - totalRejected,   totalProduction);
-    const performance  = 100;
-    const oee          = ((availability * performance * quality) / 10000).toFixed(2);
-
-    // ── create main entry ─────────────────────────────────────────────────────
-    const entry = await ProductionEntry.create({
-      userId, plantId, shiftId,
-      date, shift, location, plant, reportedBy, email,
-      requiredManpower, availableManpower, shortManpower,
-      productionEntries,
-      downtimeIds:    ids(downtimeDocs),
-      consumableIds:  ids(consumableDocs),
-      chemicalIds:    ids(chemicalDocs),
-      powderIds:      ids(powderDocs),
-      defectIds:      ids(defectDocs),
-      reworkIds:      ids(reworkDocs),
-      rejectionIds:   ids(rejectionDocs),
-      availability, performance, quality, oee,
-      reportTime: new Date(),
+    const entry = new ProductionEntry({
+      ...body,
+      shortManpower,
+      totalPlannedDowntime,
+      totalUnplannedDowntime,
+      totalDowntime,
+      rejectedQty,
+      reworkQty,
     });
 
-    res.status(201).json({ success: true, message: "Production Entry Created Successfully", entry });
+    await entry.save();
 
+    const populated = await ProductionEntry.findById(entry._id)
+      .populate("plantId", "name")
+      .populate("modelId", "name")
+      .populate("partId", "name")
+      .populate("userId", "name email");
+
+    return res.status(201).json({
+      success: true,
+      message: "Production entry created successfully",
+      data: populated,
+    });
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("createProductionEntry error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create production entry",
+      error: error.message,
+    });
   }
 };
 
-// ── GET ALL ──────────────────────────────────────────────────────────────────
+// ======================================================
+// GET ALL ENTRIES (with optional filters)
+// ======================================================
 
 export const getAllProductionEntries = async (req, res) => {
   try {
-    const entries = await ProductionEntry.find()
-      .populate("userId").populate("plantId").populate("shiftId")
-      .populate("downtimeIds").populate("consumableIds").populate("chemicalIds")
-      .populate("powderIds").populate("defectIds").populate("reworkIds").populate("rejectionIds")
-      .sort({ createdAt: -1 });
+    const {
+      plantId,
+      modelId,
+      partId,
+      shift,
+      status,
+      userId,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 100,
+    } = req.query;
 
-    res.status(200).json({ success: true, count: entries.length, entries });
+    const filter = {};
 
+    if (plantId && mongoose.Types.ObjectId.isValid(plantId)) {
+      filter.plantId = plantId;
+    }
+    if (modelId && mongoose.Types.ObjectId.isValid(modelId)) {
+      filter.modelId = modelId;
+    }
+    if (partId && mongoose.Types.ObjectId.isValid(partId)) {
+      filter.partId = partId;
+    }
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      filter.userId = userId;
+    }
+    if (shift) filter.shift = shift;
+    if (status) filter.status = status;
+
+    if (startDate || endDate) {
+      filter.reportTime = {};
+      if (startDate) filter.reportTime.$gte = new Date(startDate);
+      if (endDate) filter.reportTime.$lte = new Date(endDate);
+    }
+
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Number(limit));
+
+    const [entries, total] = await Promise.all([
+      ProductionEntry.find(filter)
+        .populate("plantId", "name")
+        .populate("modelId", "name")
+        .populate("partId", "name")
+        .populate("userId", "name email")
+        .sort({ reportTime: -1 })
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum),
+      ProductionEntry.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: entries,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+    });
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("getAllProductionEntries error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch production entries",
+      error: error.message,
+    });
   }
 };
 
-// ── GET SINGLE ───────────────────────────────────────────────────────────────
+// ======================================================
+// GET SINGLE ENTRY
+// ======================================================
 
 export const getSingleProductionEntry = async (req, res) => {
   try {
-    const entry = await ProductionEntry.findById(req.params.id)
-      .populate("userId").populate("plantId").populate("shiftId")
-      .populate("downtimeIds").populate("consumableIds").populate("chemicalIds")
-      .populate("powderIds").populate("defectIds").populate("reworkIds").populate("rejectionIds");
+    const { id } = req.params;
 
-    if (!entry) return res.status(404).json({ success: false, message: "Production Entry Not Found" });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid entry id",
+      });
+    }
 
-    res.status(200).json({ success: true, entry });
+    const entry = await ProductionEntry.findById(id)
+      .populate("plantId", "name")
+      .populate("modelId", "name")
+      .populate("partId", "name")
+      .populate("userId", "name email")
+      .populate("downtimes.downtimeTypeId", "name")
+      .populate("consumables.materialId", "name");
 
+    if (!entry) {
+      return res.status(404).json({
+        success: false,
+        message: "Production entry not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: entry,
+    });
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("getSingleProductionEntry error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch production entry",
+      error: error.message,
+    });
   }
 };
 
-// ── UPDATE ───────────────────────────────────────────────────────────────────
+// ======================================================
+// UPDATE ENTRY
+// ======================================================
 
 export const updateProductionEntry = async (req, res) => {
   try {
-    const updated = await ProductionEntry.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const { id } = req.params;
+    const body = req.body;
 
-    if (!updated) return res.status(404).json({ success: false, message: "Production Entry Not Found" });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid entry id",
+      });
+    }
 
-    res.status(200).json({ success: true, message: "Production Entry Updated", updated });
+    const existing = await ProductionEntry.findById(id);
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: "Production entry not found",
+      });
+    }
 
+    const requiredManpower =
+      body.requiredManpower !== undefined
+        ? Number(body.requiredManpower)
+        : existing.requiredManpower;
+    const availableManpower =
+      body.availableManpower !== undefined
+        ? Number(body.availableManpower)
+        : existing.availableManpower;
+    const shortManpower = Math.max(0, requiredManpower - availableManpower);
+
+    const downtimes = Array.isArray(body.downtimes)
+      ? body.downtimes
+      : existing.downtimes;
+    const totalPlannedDowntime = downtimes
+      .filter((d) => d.type === "Planned")
+      .reduce((sum, d) => sum + (Number(d.duration) || 0), 0);
+    const totalUnplannedDowntime = downtimes
+      .filter((d) => d.type === "Unplanned")
+      .reduce((sum, d) => sum + (Number(d.duration) || 0), 0);
+    const totalDowntime = totalPlannedDowntime + totalUnplannedDowntime;
+
+    const defects = Array.isArray(body.defects)
+      ? body.defects
+      : existing.defects;
+    const rejectedQty = defects
+      .filter((d) => d.defectType === "Reject")
+      .reduce((sum, d) => sum + (Number(d.quantity) || 0), 0);
+    const reworkQty = defects
+      .filter((d) => d.defectType === "Rework")
+      .reduce((sum, d) => sum + (Number(d.quantity) || 0), 0);
+
+    const updated = await ProductionEntry.findByIdAndUpdate(
+      id,
+      {
+        ...body,
+        shortManpower,
+        totalPlannedDowntime,
+        totalUnplannedDowntime,
+        totalDowntime,
+        rejectedQty,
+        reworkQty,
+      },
+      { new: true, runValidators: true }
+    )
+      .populate("plantId", "name")
+      .populate("modelId", "name")
+      .populate("partId", "name")
+      .populate("userId", "name email");
+
+    return res.status(200).json({
+      success: true,
+      message: "Production entry updated successfully",
+      data: updated,
+    });
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("updateProductionEntry error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update production entry",
+      error: error.message,
+    });
   }
 };
 
-// ── DELETE ───────────────────────────────────────────────────────────────────
+// ======================================================
+// DELETE ENTRY
+// ======================================================
 
 export const deleteProductionEntry = async (req, res) => {
   try {
-    const entry = await ProductionEntry.findById(req.params.id);
+    const { id } = req.params;
 
-    if (!entry) return res.status(404).json({ success: false, message: "Production Entry Not Found" });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid entry id",
+      });
+    }
 
-    // delete all child collections in parallel
-    await Promise.all([
-      DownTime.deleteMany ({  _id: { $in: entry.downtimeIds   } }),
-      Consumable.deleteMany({ _id: { $in: entry.consumableIds } }),
-      PTChemical.deleteMany({ _id: { $in: entry.chemicalIds   } }),
-      Powder.deleteMany    ({ _id: { $in: entry.powderIds     } }),
-      Defect.deleteMany    ({ _id: { $in: entry.defectIds     } }),
-      Rework.deleteMany    ({ _id: { $in: entry.reworkIds     } }),
-      Rejected.deleteMany  ({ _id: { $in: entry.rejectionIds  } }),
-    ]);
+    const deleted = await ProductionEntry.findByIdAndDelete(id);
 
-    await ProductionEntry.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Production entry not found",
+      });
+    }
 
-    res.status(200).json({ success: true, message: "Production Entry Deleted Successfully" });
-
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ── OEE ANALYTICS ────────────────────────────────────────────────────────────
-
-export const getOEEAnalytics = async (req, res) => {
-  try {
-    const entries      = await ProductionEntry.find();
-    const total        = entries.length;
-    const avg          = (key) => total > 0 ? (entries.reduce((a, i) => a + Number(i[key] || 0), 0) / total).toFixed(2) : 0;
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      analytics: {
-        availability: avg("availability"),
-        performance:  avg("performance"),
-        quality:      avg("quality"),
-        oee:          avg("oee"),
-      },
+      message: "Production entry deleted successfully",
     });
-
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("deleteProductionEntry error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete production entry",
+      error: error.message,
+    });
   }
 };

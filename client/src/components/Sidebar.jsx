@@ -1,10 +1,5 @@
-import {
-  Link,
-  useLocation,
-} from "react-router-dom";
-
+import { Link,useLocation} from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-
 import {
   LayoutDashboard,
   Factory,
@@ -18,21 +13,11 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-
-export default function Sidebar({
-  collapsed,
-  setCollapsed,
-}) {
-
+export default function Sidebar({ collapsed,setCollapsed }) {
   const { user } = useAuth();
-
   const location = useLocation();
-
   const allMenus = {
-
     SUPER_ADMIN: [
-
-    
     {
       name: "Dashboard",
       path: "/",
@@ -58,53 +43,48 @@ export default function Sidebar({
     },
 
     {
-      name: "User Master",
-      path: "/user-master",
-      icon: Users,
+      name: "Manage Defects",
+      path: "/manage-defects",
+      icon: CheckCircle,
     },
 
     {
-      name: "Production",
-      path: "/production-entry",
-      icon: ClipboardList,
-    },
-    
-
-    ],
-
-    PLANT_ADMIN: [
-
-    
-    {
-      name: "Dashboard",
-      path: "/",
-      icon: LayoutDashboard,
-    },
-
-    {
-      name: "Model Master",
-      path: "/model-master",
-      icon: Boxes,
-    },
-
-    {
-      name: "Part Master",
-      path: "/part-master",
+      name: "Manage Material",
+      path: "/manage-material",
       icon: Package,
     },
 
     {
+      name: "Manage Downtime",
+      path: "/manage-downtime",
+      icon: BarChart3,
+    },
+
+    {
+      name: "User Master",
+      path: "/user-master",
+      icon: Users,
+    },
+
+
+    {
       name: "Production",
       path: "/production-entry",
       icon: ClipboardList,
     },
-    
+
+    ],
+
+    PLANT_ADMIN: [
+    {
+      name: "Dashboard",
+      path: "/",
+      icon: LayoutDashboard,
+    },
 
     ],
 
     MANAGER: [
-
-    
     {
       name: "Dashboard",
       path: "/",
@@ -122,20 +102,14 @@ export default function Sidebar({
       path: "/user-master",
       icon: Users,
     },
-    
-
     ],
 
     USER: [
-
-    
     {
       name: "Production",
       path: "/production-entry",
       icon: ClipboardList,
     },
-    
-
     ],
 
     };

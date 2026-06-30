@@ -4,6 +4,7 @@ import {
   createProductionEntry,
   getAllProductionEntries,
   getSingleProductionEntry,
+  updateProductionEntry,
   deleteProductionEntry,
 } from "../controllers/production.controller.js";
 
@@ -19,7 +20,8 @@ router.post(
 );
 
 // ======================================
-// GET ALL ENTRIES
+// GET ALL ENTRIES (supports query filters:
+// plantId, modelId, partId, userId, shift, status, startDate, endDate, page, limit)
 // ======================================
 
 router.get(
@@ -34,6 +36,15 @@ router.get(
 router.get(
   "/production-entry/:id",
   getSingleProductionEntry
+);
+
+// ======================================
+// UPDATE ENTRY
+// ======================================
+
+router.put(
+  "/production-entry/:id",
+  updateProductionEntry
 );
 
 // ======================================

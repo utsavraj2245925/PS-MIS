@@ -7,7 +7,7 @@ const materialSchema = new mongoose.Schema({
     },
     type:{
         type:String,
-        enum:["powder", "chemical", "items"],
+        enum:["powderItems", "chemicalItems", "usefulItems"],
         required:true
     },
     mesurmentType:{
@@ -15,11 +15,8 @@ const materialSchema = new mongoose.Schema({
         enum:["kg", "ltr", "pcs"],
         default:"kg"
     },
-    plantId:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref: "Plant"
-    },
-
+    
+  
 }, {timestamps:true})
 
 const materialModel = mongoose.model("Material", materialSchema)

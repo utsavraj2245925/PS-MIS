@@ -34,7 +34,7 @@ const plantStrengthSchema = new mongoose.Schema({
 
       shiftsPerDay: {
         type: Number,
-        default: 2,
+        default: 1,
       },
 
       demandPerShift: {
@@ -49,7 +49,7 @@ const plantStrengthSchema = new mongoose.Schema({
       hangerEfficiency: {
         type: Number,
         enum: [100, 95, 85, 75],
-        default: 100,
+        default: 85,
       },
 
       // =====================================

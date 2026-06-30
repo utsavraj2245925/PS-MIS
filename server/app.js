@@ -15,13 +15,9 @@ import partRoutes from "./routes/parts.route.js";
 import plantRoutes from "./routes/plants.route.js";
 import userRoutes from "./routes/users.route.js";
 import productionEntryRoutes from "./routes/production.route.js";
-
-// Master Routes
-import defectTypeRoutes from "./routes/defects.route.js";
-import downtimeReasonRoutes from "./routes/downTime.route.js";
-import consumableTypeRoutes from "./routes/consumable.route.js";
-
-
+import defectsRoutes from "./routes/defects.route.js";
+import downtimeRoutes from "./routes/downtime.route.js";
+import materialRoutes from "./routes/material.route.js";
 
 // Connect Database
 await connectDB();
@@ -56,9 +52,10 @@ app.use("/api/users", userRoutes);
 app.use("/api/production-entry", productionEntryRoutes);
 
 // Master Routes
-app.use("/api/master/defect-types", defectTypeRoutes);
-app.use("/api/master/downtime-reasons", downtimeReasonRoutes);
-app.use("/api/master/consumable-types", consumableTypeRoutes);
+app.use("/api/defects", defectsRoutes);
+app.use("/api/downtime-types", downtimeRoutes);
+app.use("/api/materials", materialRoutes);
+app.use("/api/defects", defectsRoutes);
 
 // Health Check
 app.get("/", (req, res) => {

@@ -25,15 +25,21 @@ const productionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref:"Consume"
   },
-  breakDownId:{
+  downnTimeId:[{
     type: mongoose.Schema.Types.ObjectId,
-    ref:"BreakDown"
-  },
+    ref:"downtimeTypes"
+  }],
+
+  unplannedDowntimeId:[{
+    type: mongoose.Schema.Types.ObjectId,
+    ref:"downtimeTypes"
+  }],
 
   plantId:{
     type: mongoose.Schema.Types.ObjectId,
     ref:"Plant"
   },
+  
   totalRejected:{
     type: Number,
     default: 0

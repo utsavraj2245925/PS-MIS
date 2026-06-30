@@ -6,10 +6,16 @@ import PlantMasterPage from "./pages/PlantMasterPage";
 import ModelMasterPage from "./pages/ModelMasterPage";
 import PartMasterPage from "./pages/PartMasterPage";
 import UserMasterPage from "./pages/UserMasterPage";
+import ManageDefectsPage from "./pages/ManageDefectsPage";
+import ManageMaterialPage from "./pages/ManageMaterialPage";
+import ManageDowntimePage from "./pages/ManageDowntimePage";
+
+
 import ProductionEntryPage from "./pages/ProductionEntryPage";
 import UserProductionPage from "./pages/UserProductionPage";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
+
 
 function App() {
   const { user, loading } = useAuth();
@@ -19,7 +25,7 @@ function App() {
   // if (loading) {
   //   return (
   //     <div className="h-screen flex items-center justify-center">
-  //       Loading...gtvtg
+  //       Loading...
   //     </div>
   //   );
   // }
@@ -51,7 +57,7 @@ function App() {
         <Route
           path="/plant-master"
           element={
-            <ProtectedRoute allowedRoles={["SUPER_ADMIN"]}>
+            <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin"]}>
               <DashboardLayout><PlantMasterPage /></DashboardLayout>
             </ProtectedRoute>
           }
@@ -61,7 +67,7 @@ function App() {
         <Route
           path="/model-master"
           element={
-            <ProtectedRoute allowedRoles={["SUPER_ADMIN", "PLANT_ADMIN"]}>
+            <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin", "PLANT_ADMIN","plantAdmin"]}>
               <DashboardLayout><ModelMasterPage /></DashboardLayout>
             </ProtectedRoute>
           }
@@ -71,7 +77,7 @@ function App() {
         <Route
           path="/part-master"
           element={
-            <ProtectedRoute allowedRoles={["SUPER_ADMIN", "PLANT_ADMIN"]}>
+            <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin", "PLANT_ADMIN", "plantAdmin"]}>
               <DashboardLayout><PartMasterPage /></DashboardLayout>
             </ProtectedRoute>
           }
@@ -81,18 +87,49 @@ function App() {
         <Route
           path="/user-master"
           element={
-            <ProtectedRoute allowedRoles={["SUPER_ADMIN", "MANAGER"]}>
+            <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin", "MANAGER" , "manager"]}>
               <DashboardLayout><UserMasterPage /></DashboardLayout>
             </ProtectedRoute>
           }
         />
+        {/* Manage Defects */}
+        <Route
+          path="/manage-defects"
+          element={
+            <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin"]}>
+              <DashboardLayout><ManageDefectsPage /></DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+         {/* Manage DownTime */}
+        <Route
+          path="/manage-downtime"
+          element={
+            <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin"]}>
+              <DashboardLayout><ManageDowntimePage /></DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Manage Consumption */}
+        <Route
+          path="/manage-material"
+          element={
+            <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin"]}>
+              <DashboardLayout><ManageMaterialPage /></DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        
+
 
         {/* PRODUCTION ENTRY — all roles allowed, but USER gets a different UI */}
         <Route
           path="/production-entry"
           element={
             <ProtectedRoute>
-              {user?.role === "USER"
+              {user?.role === "USER" || user?.role === "user"
                 ? <UserProductionPage />
                 : <DashboardLayout><ProductionEntryPage /></DashboardLayout>
               }
