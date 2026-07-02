@@ -1,8 +1,7 @@
 import express from "express";
-
 import {
   createProductionEntry,
-  getAllProductionEntries,
+  getProductionEntries,
   getSingleProductionEntry,
   updateProductionEntry,
   deleteProductionEntry,
@@ -10,50 +9,11 @@ import {
 
 const router = express.Router();
 
-// ======================================
-// CREATE ENTRY
-// ======================================
-
-router.post(
-  "/production-entry",
-  createProductionEntry
-);
-
-// ======================================
-// GET ALL ENTRIES (supports query filters:
-// plantId, modelId, partId, userId, shift, status, startDate, endDate, page, limit)
-// ======================================
-
-router.get(
-  "/production-entry",
-  getAllProductionEntries
-);
-
-// ======================================
-// GET SINGLE ENTRY
-// ======================================
-
-router.get(
-  "/production-entry/:id",
-  getSingleProductionEntry
-);
-
-// ======================================
-// UPDATE ENTRY
-// ======================================
-
-router.put(
-  "/production-entry/:id",
-  updateProductionEntry
-);
-
-// ======================================
-// DELETE ENTRY
-// ======================================
-
-router.delete(
-  "/production-entry/:id",
-  deleteProductionEntry
-);
+router.post("/", createProductionEntry);
+router.get("/", getProductionEntries);
+router.get("/:id", getSingleProductionEntry);
+router.put("/:id", updateProductionEntry);
+router.delete("/:id", deleteProductionEntry);
 
 export default router;
+

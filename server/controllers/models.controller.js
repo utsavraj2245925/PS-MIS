@@ -40,6 +40,7 @@ export const createModel = async (req, res) => {
 
 export const getModels = async (req, res) => {
   try {
+    console.log("GET MODELS CALLED");
     const models = await Model.find().sort({ createdAt: -1 }).lean();
     return ok(res, 200, { count: models.length, models });
   } catch (error) { 

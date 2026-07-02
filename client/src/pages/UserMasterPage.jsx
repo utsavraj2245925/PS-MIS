@@ -35,10 +35,10 @@ import {
    CONSTANTS
 ───────────────────────────────────────────── */
 const ROLE_OPTIONS = [
-  { value: "SUPER_ADMIN", label: "Super Admin" },
-  { value: "PLANT_ADMIN", label: "Plant Admin" },
-  { value: "MANAGER",     label: "Manager"     },
-  { value: "USER",        label: "User"        },
+  { value: "superAdmin", label: "Super Admin" },
+  { value: "plantAdmin", label: "Plant Admin" },
+  { value: "manager",     label: "Manager"     },
+  { value: "user",        label: "User"        },
 ];
 
 const STATUS_OPTIONS = [
@@ -50,14 +50,14 @@ const STATUS_OPTIONS = [
    ROLE / STATUS VISUAL TOKENS
 ───────────────────────────────────────────── */
 const ROLE_META = {
-  SUPER_ADMIN: { bg: "#FEE2E2", fg: "#B91C1C", dot: "#EF4444", label: "Super Admin" },
-  PLANT_ADMIN: { bg: "#CFFAFE", fg: "#0E7490", dot: "#06B6D4", label: "Plant Admin" },
-  MANAGER:     { bg: "#F3E8FF", fg: "#7E22CE", dot: "#A855F7", label: "Manager"     },
-  USER:        { bg: "#F1F5F9", fg: "#475569", dot: "#94A3B8", label: "User"        },
+  superAdmin: { bg: "#FEE2E2", fg: "#B91C1C", dot: "#EF4444", label: "Super Admin" },
+  plantAdmin: { bg: "#CFFAFE", fg: "#0E7490", dot: "#06B6D4", label: "Plant Admin" },
+  manager:     { bg: "#F3E8FF", fg: "#7E22CE", dot: "#A855F7", label: "Manager"     },
+  user:        { bg: "#F1F5F9", fg: "#475569", dot: "#94A3B8", label: "User"        },
 };
 
 const RoleTag = ({ role }) => {
-  const m = ROLE_META[role] || ROLE_META.USER;
+  const m = ROLE_META[role] || ROLE_META.user;
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 5,
@@ -175,7 +175,7 @@ export default function UserMasterPage() {
   const [name,     setName]     = useState("");
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
-  const [role,     setRole]     = useState("USER");
+  const [role,     setRole]     = useState("user");
   const [location, setLocation] = useState("");
   const [plantId,  setPlantId]  = useState("");
   const [status,   setStatus]   = useState("Active");
@@ -230,7 +230,7 @@ export default function UserMasterPage() {
   /* ─────────────── RESET ─────────────── */
   const resetForm = () => {
     setName(""); setEmail(""); setPassword("");
-    setRole("USER"); setLocation(""); setPlantId(""); setStatus("Active");
+    setRole("user"); setLocation(""); setPlantId(""); setStatus("Active");
     setEditId(null);
   };
 
@@ -279,9 +279,9 @@ export default function UserMasterPage() {
     setName(user.name || "");
     setEmail(user.email || "");
     setPassword("");
-    setRole(user.role || "USER");
+    setRole(user.role || "user");
     setLocation(user.location || "");
-    setPlantId(user.plantId?._id || "");
+    setPlantId(user.plantId._id || "");
     setStatus(user.status || "Active");
     setIsFormOpen(true);
   };
@@ -349,7 +349,7 @@ export default function UserMasterPage() {
     { label: "Total Users",  value: users.length,                                     icon: Users,     tint: "#0E7490", bg: "#ECFEFF" },
     { label: "Active",       value: users.filter(u => u.status === "Active").length,   icon: UserCheck, tint: "#15803D", bg: "#F0FDF4" },
     { label: "Inactive",     value: users.filter(u => u.status === "Inactive").length, icon: UserX,     tint: "#BE123C", bg: "#FFF1F2" },
-    { label: "Plant Admins", value: users.filter(u => u.role === "PLANT_ADMIN").length,icon: Shield,    tint: "#7E22CE", bg: "#FAF5FF" },
+    { label: "Plant Admins", value: users.filter(u => u.role === "plantAdmin").length,icon: Shield,    tint: "#7E22CE", bg: "#FAF5FF" },
   ];
 
   /* ─────────────── TABLE COLUMNS ─────────────── */

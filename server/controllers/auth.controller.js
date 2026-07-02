@@ -55,7 +55,9 @@ export const loginUser = async (req, res) => {
 
 export const authenticateMe = async (req, res) => {
     try {
-      const user = await User.findById( req.user.id).select("-password");
+      const user = await User.findById( req.user.id)
+      .populate("plantId", "plantName location")
+      .select("-password");
 
       if (!user) {
         return res.status(404).json({

@@ -47,4 +47,4 @@ router.get("/:id", getDefectById);
 router.put("/:id", updateDefect);
 router.delete("/:id", deleteDefect);
 
-export default router;
+export default router; 

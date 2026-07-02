@@ -45,7 +45,7 @@ function App() {
           path="/"
           element={
             <ProtectedRoute>
-              {user?.role === "USER"
+              {user?.role === "user" || user?.role === "USER"
                 ? <Navigate to="/production-entry" replace />
                 : <DashboardLayout><DashboardPage /></DashboardLayout>
               }
@@ -87,7 +87,7 @@ function App() {
         <Route
           path="/user-master"
           element={
-            <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin", "MANAGER" , "manager"]}>
+            <ProtectedRoute allowedRoles={["SUPER_ADMIN", "superAdmin", "MANAGER" , "manager"]}>
               <DashboardLayout><UserMasterPage /></DashboardLayout>
             </ProtectedRoute>
           }

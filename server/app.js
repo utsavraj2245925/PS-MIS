@@ -49,10 +49,10 @@ app.use("/api", modelRoutes);
 app.use("/api", partRoutes);
 app.use("/api/plants", plantRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api/production-entry", productionEntryRoutes);
+app.use("/api/production", productionEntryRoutes);
 
 // Master Routes
-app.use("/api/defects", defectsRoutes);
+
 app.use("/api/downtime-types", downtimeRoutes);
 app.use("/api/materials", materialRoutes);
 app.use("/api/defects", defectsRoutes);

@@ -3,6 +3,7 @@ import express from "express";
 import {
   createPart,
   getParts,
+  getPartsByModel,
   updatePart,
   deletePart,
   getFilterParts,
@@ -20,6 +21,7 @@ router.post("/parts", createPart);
 // GET ALL PARTS
 // ==========================================
 router.get("/parts", getParts);
+router.get("/parts/by-model/:modelId", getPartsByModel);
 
 // ==========================================
 // FILTER PARTS

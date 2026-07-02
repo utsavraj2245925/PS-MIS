@@ -17,7 +17,7 @@ export default function Sidebar({ collapsed,setCollapsed }) {
   const { user } = useAuth();
   const location = useLocation();
   const allMenus = {
-    SUPER_ADMIN: [
+    superAdmin: [
     {
       name: "Dashboard",
       path: "/",
@@ -75,7 +75,7 @@ export default function Sidebar({ collapsed,setCollapsed }) {
 
     ],
 
-    PLANT_ADMIN: [
+    plantAdmin: [
     {
       name: "Dashboard",
       path: "/",
@@ -84,7 +84,7 @@ export default function Sidebar({ collapsed,setCollapsed }) {
 
     ],
 
-    MANAGER: [
+    manager: [
     {
       name: "Dashboard",
       path: "/",
@@ -104,7 +104,7 @@ export default function Sidebar({ collapsed,setCollapsed }) {
     },
     ],
 
-    USER: [
+    user: [
     {
       name: "Production",
       path: "/production-entry",

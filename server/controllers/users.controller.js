@@ -9,7 +9,7 @@ import Plant from "../models/plants.model.js";
 
 export const createUser = async (req, res) => {
   try {
-    const {name,mail,assword,ole,ocation,lantId,tatus } = req.body;
+    const {name,email,password,role,location,plantId,status } = req.body;
     // ==========================================
     // VALIDATION
     // ==========================================

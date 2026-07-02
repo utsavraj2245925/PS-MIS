@@ -36,6 +36,22 @@ export const getParts = async (req, res) => {
   } catch (error) { return serverErr(res, error); }
 };
 
+export const getPartsByModel = async (req, res) => {
+  try {
+    const { modelId } = req.params;
+
+    if (!isValidId(modelId)) return fail(res, 400, "Invalid Model ID");
+
+    const parts = await Part.find({ modelId })
+      .populate("modelId", "modelName")
+      .sort({ createdAt: -1 })
+      .lean();
+      
+    return ok(res, 200, { count: parts.length, parts });
+  } catch (error) { return serverErr(res, error); }
+}
+
+
 // ── GET SINGLE ──────────────────────────────────────
 export const getSinglePart = async (req, res) => {
   try {

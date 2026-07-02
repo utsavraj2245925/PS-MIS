@@ -27,6 +27,7 @@ export const getAllRejects = async (req, res) => {
     const rejects = await Reject.find().sort({ createdAt: -1 });
     return res.status(200).json({ data: rejects });
   } catch (error) {
+    console.error("GET ALL REJECTS ERROR:", error);
     return res.status(500).json({ message: "Failed to fetch reject types", error: error.message });
   }
 };

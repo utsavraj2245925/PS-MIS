@@ -177,7 +177,7 @@ export default function ModelMasterPage() {
 
   /* ── Stats ── */
   const totalModels  = models.length;
-  const activeModels = models.filter((m) => m.status === "Active").length;
+  const activeModels = models.filter((m) => m.status.toLowerCase() === "active").length;
 
   /* ── Table columns ── */
   const columns = [

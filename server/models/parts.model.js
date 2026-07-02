@@ -11,7 +11,6 @@ const partSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      unique:true,
     },
     area: {
       type: Number,
