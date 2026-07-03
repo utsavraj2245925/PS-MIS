@@ -35,14 +35,14 @@ export const createProductionEntry = async (req, res) => {
   try {
     const {
       reportedBy, shift, requiredManpower = 0, availableManpower = 0,
-      productionEntries = [], rejects = [], reworks = [], downtimes = [], consumables = [],
+      productions = [], rejects = [], reworks = [], downtimes = [], consumables = [],
       finalRemark = "", status = "Submitted",
     } = req.body;
 
 
     if (!reportedBy) return res.status(400).json({ success: false, message: "Reported By user is required" });
     if (!shift) return res.status(400).json({ success: false, message: "Shift is required" });
-    if (!productionEntries.length) return res.status(400).json({ success: false, message: "Add at least one model to the production list" });
+    if (!productions.length) return res.status(400).json({ success: false, message: "Add at least one model to the production list" });
 
     const user = await User.findById(reportedBy).populate("plantId");
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
@@ -50,7 +50,7 @@ export const createProductionEntry = async (req, res) => {
 
     const plant = user.plantId; // already populated, no need to re-query
 
-    for (const row of productionEntries) {
+    for (const row of productions) {
       if (!row.modelId || !row.partId) return res.status(400).json({ success: false, message: "Model and Part are required in every production row" });
     }
     for (const row of [...rejects, ...reworks]) {
@@ -69,7 +69,7 @@ export const createProductionEntry = async (req, res) => {
 
     const totalRejectQty = sumBy(rejects, "quantity");
     const totalReworkQty = sumBy(reworks, "quantity");
-    const totalProductionQty = sumBy(productionEntries, "productionQty") + totalReworkQty; // rework auto-counts into production
+    const totalProductionQty = sumBy(productions, "productionQty") + totalReworkQty; // rework auto-counts into production
     const totalDefectQty = totalRejectQty + totalReworkQty;
 
     const newEntry = await ProductionEntry.create({
@@ -77,7 +77,7 @@ export const createProductionEntry = async (req, res) => {
       plantId: plant._id, plantName: plant.plantName, location: plant.location,
       shift, reportTime: new Date(),
       requiredManpower, availableManpower, shortageManpower: Math.max(requiredManpower - availableManpower, 0),
-      productionEntries, rejects, reworks, downtimes: formattedDowntimes,
+      productions, rejects, reworks, downtimes: formattedDowntimes,
       totalPlannedDowntime, totalUnplannedDowntime, totalDowntime: totalPlannedDowntime + totalUnplannedDowntime,
       consumables, totalProductionQty, totalRejectQty, totalReworkQty, totalDefectQty, finalRemark, status,
     });
@@ -91,7 +91,7 @@ export const createProductionEntry = async (req, res) => {
 
 /* ========================= GET ALL ========================= */
 
-export const getProductionEntries = async (req, res) => {
+export const getproductions = async (req, res) => {
   try {
     const { plantId, shift, status, from, to } = req.query;
 
@@ -128,14 +128,14 @@ export const getSingleProductionEntry = async (req, res) => {
 
 export const updateProductionEntry = async (req, res) => {
   try {
-    const { productionEntries, rejects, reworks, downtimes, requiredManpower, availableManpower } = req.body;
+    const { productions, rejects, reworks, downtimes, requiredManpower, availableManpower } = req.body;
     const patch = { ...req.body };
 
     if (rejects) patch.totalRejectQty = sumBy(rejects, "quantity");
     if (reworks) patch.totalReworkQty = sumBy(reworks, "quantity");
-    if (productionEntries || reworks) {
-      const existing = productionEntries ? null : await ProductionEntry.findById(req.params.id);
-      const productionSum = productionEntries ? sumBy(productionEntries, "productionQty") : sumBy(existing?.productionEntries || [], "productionQty");
+    if (productions || reworks) {
+      const existing = productions ? null : await ProductionEntry.findById(req.params.id);
+      const productionSum = productions ? sumBy(productions, "productionQty") : sumBy(existing?.productions || [], "productionQty");
       const reworkSum = reworks ? sumBy(reworks, "quantity") : sumBy(existing?.reworks || [], "quantity");
       patch.totalProductionQty = productionSum + reworkSum;
     }

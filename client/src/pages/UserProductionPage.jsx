@@ -10,7 +10,7 @@ import {
 } from "antd";
 import {
   Factory, Package, Boxes, AlertTriangle, Users, Clock3, FlaskConical,
-  RefreshCcw, Download, Save, Plus, Trash2, ShieldAlert, RotateCcw,
+  RefreshCcw, Download, Save, Plus, Trash2, ShieldAlert, RotateCcw,ArrowLeft,
   CalendarDays, MapPin, UserCircle2, Sun, Moon, ChevronRight, TrendingUp, LogOut,
 } from "lucide-react";
 
@@ -498,8 +498,8 @@ export default function UserProductionPage() {
     setConfirmSaveOpen(false);
     setSaving(true);
     try {
-      // flatten productionLog to productionEntries (per part row)
-      const productionEntries = productionLog.flatMap((entry) =>
+      // flatten productionLog to productions (per part row)
+      const productions = productionLog.flatMap((entry) =>
         entry.parts.map((p) => {
           const reworkQty = defectLog
             .filter((d) => d.modelId === entry.modelId && d.partId === p.partId && d.defectType === "Rework")
@@ -522,7 +522,7 @@ export default function UserProductionPage() {
         reportedByName:  user?.name,
         reportedByEmail: user?.email,
         plantId:   user?.plantId?._id || user?.plantId,
-        plantName: user?.plantId?.plantName || "",
+        plantName: user?.plantId?.plantName || user?.plantName || "",
         location:  user?.plantId?.location || user?.location || "",
         shift,
         reportDate:  dayjs().toISOString(),
@@ -530,7 +530,7 @@ export default function UserProductionPage() {
         requiredManpower,
         availableManpower,
         shortManpower: shortageManpower,
-        productionEntries,
+        productions,
         defects: defectLog.map((d) => ({
           type:        d.defectType,
           modelId:     d.modelId,
@@ -845,7 +845,7 @@ export default function UserProductionPage() {
               <Factory size={13} className="text-teal-600 flex-shrink-0" />
               <div className="leading-none">
                 <div className="text-xs font-semibold text-slate-800">
-                  {user?.plantId?.plantName || user?.plantName || "—"}
+                  {user?.plantId?.plantName || user?.plantName || "Location"}
                 </div>
                 <div className="text-[10px] text-black-400 mt-0.5">
                   {user?.plantId?.location || user?.location || "—"}
@@ -868,6 +868,19 @@ export default function UserProductionPage() {
 
             {/* Divider */}
             <div className="w-px h-7 bg-slate-200" />
+
+            {/* Back to Records */}
+            <Tooltip title="Back to Production Records">
+              <Button
+                size="small"
+                icon={<ArrowLeft size={13} />}
+                onClick={() => navigate("/production-records")}
+                className="!rounded-lg !font-semibold !text-slate-600 !border-slate-300 !bg-white hover:!border-teal-400 hover:!text-teal-600 transition-all"
+              >
+                Records
+              </Button>
+            </Tooltip>
+
 
             {/* Logout */}
             <Tooltip title="Sign out">
@@ -1014,7 +1027,7 @@ export default function UserProductionPage() {
                 disabled={!selectedModelId || currentModelParts.length === 0}
                 className="!rounded-xl !bg-blue-600 !border-blue-600 !font-semibold"
               >
-                + Add Model to List
+                 Add Model to List
               </Button>
             </div>
 
@@ -1110,16 +1123,16 @@ export default function UserProductionPage() {
                 <table className="w-full">
                   <thead>
                     <tr>
-                      {["#", "Type", "Model", "Part", "Defect Name", "Qty", ""].map((h) => (
-                        <th key={h} className={TH}>{h}</th>
+                      {["#", "Type", "Model", "Part", "Defect Name", "Qty", "Actions"].map((h) => (
+                        <th key={h} className={TH} style={{ textAlign:"start" }} >{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {defectLog.map((row, i) => (
-                      <tr key={row.key} className="hover:bg-slate-50/50">
-                        <td className={`${TD} text-slate-400`}>{i + 1}</td>
-                        <td className={TD}>
+                      <tr key={row.key} className="hover:bg-slate-50/50 ">
+                        <td className={`${TD} text-slate-400 `}>{i + 1}</td>
+                        <td className={`${TD} `}>
                           <Tag color={row.defectType === "Reject" ? "red" : "orange"}
                             className="!rounded-lg !font-semibold">
                             {row.defectType}

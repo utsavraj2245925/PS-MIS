@@ -1,7 +1,7 @@
 import express from "express";
 import {
   createProductionEntry,
-  getProductionEntries,
+  getproductions,
   getSingleProductionEntry,
   updateProductionEntry,
   deleteProductionEntry,
@@ -10,7 +10,7 @@ import {
 const router = express.Router();
 
 router.post("/", createProductionEntry);
-router.get("/", getProductionEntries);
+router.get("/", getproductions);
 router.get("/:id", getSingleProductionEntry);
 router.put("/:id", updateProductionEntry);
 router.delete("/:id", deleteProductionEntry);

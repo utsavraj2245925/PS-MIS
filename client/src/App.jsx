@@ -13,6 +13,7 @@ import ManageDowntimePage from "./pages/ManageDowntimePage";
 
 import ProductionEntryPage from "./pages/ProductionEntryPage";
 import UserProductionPage from "./pages/UserProductionPage";
+import ProductionRecordsPage from "./pages/ProductionRecordPage";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
 
@@ -120,9 +121,16 @@ function App() {
             </ProtectedRoute>
           }
         />
-
-        
-
+   
+        {/* PRODUCTION RECORDS — only admins/managers land here; USER role is redirected */}
+        <Route
+          path="/production-records"
+          element={
+            <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin", "PLANT_ADMIN","plantAdmin", "MANAGER" , "manager","user","USER"]}>
+              <DashboardLayout><ProductionRecordsPage /></DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
 
         {/* PRODUCTION ENTRY — all roles allowed, but USER gets a different UI */}
         <Route

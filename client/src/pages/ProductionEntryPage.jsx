@@ -10,7 +10,7 @@ import {
 } from "antd";
 import {
   Factory, Package, Boxes, AlertTriangle, Users, Clock3, FlaskConical,
-  RefreshCcw, Download, Save, Plus, Trash2, ShieldAlert, RotateCcw,
+  RefreshCcw, Download, Save, Plus, Trash2, ShieldAlert, RotateCcw,ArrowLeft,
   CalendarDays, MapPin, UserCircle2, Sun, Moon, ChevronRight, TrendingUp, LogOut,
 } from "lucide-react";
 
@@ -85,6 +85,7 @@ const KpiCard = ({ icon: Icon, label, value, tone }) => {
    MAIN PAGE
 ────────────────────────────────────────────────────────── */
 export default function UserProductionPage() {
+
   /* ── auth + routing ── */
   const { logout, user, setUser } = useAuth();
   const navigate   = useNavigate();
@@ -522,7 +523,7 @@ export default function UserProductionPage() {
         reportedByName:  user?.name,
         reportedByEmail: user?.email,
         plantId:   user?.plantId?._id || user?.plantId,
-        plantName: user?.plantId?.plantName || "",
+        plantName: user?.plantId?.plantName || user?.plantName || "",
         location:  user?.plantId?.location || user?.location || "",
         shift,
         reportDate:  dayjs().toISOString(),
@@ -736,6 +737,17 @@ export default function UserProductionPage() {
             <SectionHead icon={Clock3} border="#0d9488" color="text-teal-600">
               Shift Information
             </SectionHead>
+            {/* Back to Records */}
+            <Tooltip title="Back to Production Records">
+              <Button
+                size="small"
+                icon={<ArrowLeft size={13} />}
+                onClick={() => navigate("/production-records")}
+                className="!rounded-lg !font-semibold !text-slate-600 !border-slate-300 !bg-white hover:!border-teal-400 hover:!text-teal-600 transition-all"
+              >
+                Records
+              </Button>
+            </Tooltip>
           </div>
           <div className="px-5 py-4">
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -855,7 +867,7 @@ export default function UserProductionPage() {
                 disabled={!selectedModelId || currentModelParts.length === 0}
                 className="!rounded-xl !bg-blue-600 !border-blue-600 !font-semibold"
               >
-                + Add Model to List
+                 Add Model to List
               </Button>
             </div>
 

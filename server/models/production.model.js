@@ -54,6 +54,7 @@ const productionEntrySchema = new mongoose.Schema({
   employeeName: { type: String, trim: true },
   employeeEmail: { type: String, trim: true },
   role: { type: String, trim: true },
+  shift: 1,
 
   // plant info (snapshot at time of entry)
   plantId: { type: mongoose.Schema.Types.ObjectId, ref: "Plant", required: true },
@@ -80,6 +81,7 @@ const productionEntrySchema = new mongoose.Schema({
   totalPlannedDowntime: { type: Number, default: 0 },
   totalUnplannedDowntime: { type: Number, default: 0 },
   totalDowntime: { type: Number, default: 0 },
+  
 
   // final summary
   totalProductionQty: { type: Number, default: 0 }, // = sum(productions) + sum(reworks)
@@ -87,7 +89,8 @@ const productionEntrySchema = new mongoose.Schema({
   totalReworkQty: { type: Number, default: 0 },
   totalDefectQty: { type: Number, default: 0 }, // = totalRejectQty + totalReworkQty
   finalRemark: { type: String, trim: true, default: "" },
-  status: { type: String, enum: ["Draft", "Submitted"], default: "Submitted" },
+  status: { type: String, enum: ["Draft", "Submitted","Rejected"], default: "Submitted" },
 }, { timestamps: true });
+
 
 export default mongoose.model("ProductionEntry", productionEntrySchema);
