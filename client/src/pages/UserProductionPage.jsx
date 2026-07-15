@@ -105,6 +105,7 @@ export default function UserProductionPage() {
   const [reworkTypes, setReworkTypes] = useState([]);
   const [downtimeTypes, setDowntimeTypes] = useState([]);
   const [materials, setMaterials]     = useState([]);
+  const [plantStrengths, setPlantStrengths] = useState([]);
 
   /* ── shift ── */
   const [shift, setShift] = useState("Day");
@@ -190,6 +191,13 @@ export default function UserProductionPage() {
     setMaterials(data?.data || []);
   }, []);
 
+  /** Reuses getproductions — only plantStrengths from the response is used here */
+  const fetchPlantStrengths = useCallback(async () => {
+    const today = dayjs().format("YYYY-MM-DD");
+    const { data } = await API.get("/production", { params: { from: today, to: today } });
+    setPlantStrengths(data?.plantStrengths || []);
+  }, []);
+
   const loadEverything = useCallback(async () => {
     setPageLoading(true);
     try {
@@ -199,6 +207,7 @@ export default function UserProductionPage() {
         fetchReworkTypes(), 
         fetchDowntimeTypes(), 
         fetchMaterials(),
+        fetchPlantStrengths(),
       ]);
     } catch (error) {
       console.error("Error loading data:", error);
@@ -206,7 +215,7 @@ export default function UserProductionPage() {
     } finally {
       setPageLoading(false);
     }
-  }, [ fetchModels, fetchRejectTypes, fetchReworkTypes, fetchDowntimeTypes, fetchMaterials]);
+  }, [ fetchModels, fetchRejectTypes, fetchReworkTypes, fetchDowntimeTypes, fetchMaterials, fetchPlantStrengths]);
 
   useEffect(() => { loadEverything(); }, [loadEverything]);
 
@@ -463,6 +472,16 @@ export default function UserProductionPage() {
     return production;
   }, [productionLog]);
 
+  const plantTotalTarget = useMemo(
+    () => plantStrengths.reduce((sum, p) => sum + (p.demandPerShift || 0), 0),
+    [plantStrengths]
+  );
+
+  const achievementPercent = useMemo(
+    () => (plantTotalTarget > 0 ? parseFloat(((productionTotals / plantTotalTarget) * 100).toFixed(2)) : 0),
+    [productionTotals, plantTotalTarget]
+  );
+
   /* ════════════════════════════════════════════════════════
      VALIDATION
   ════════════════════════════════════════════════════════ */
@@ -498,62 +517,53 @@ export default function UserProductionPage() {
     setConfirmSaveOpen(false);
     setSaving(true);
     try {
-      // flatten productionLog to productions (per part row)
+     // schema only wants modelId/partId/productionQty — server itself computes
+      // demandPerShift + achievementPercent from PlantStrength
       const productions = productionLog.flatMap((entry) =>
-        entry.parts.map((p) => {
-          const reworkQty = defectLog
-            .filter((d) => d.modelId === entry.modelId && d.partId === p.partId && d.defectType === "Rework")
-            .reduce((s, d) => s + (d.quantity || 0), 0);
-          const rejectQty = defectLog
-            .filter((d) => d.modelId === entry.modelId && d.partId === p.partId && d.defectType === "Reject")
-            .reduce((s, d) => s + (d.quantity || 0), 0);
-          return {
-            modelId: entry.modelId,
-            partId: p.partId,
-            productionQty: p.qty,
-            reworkQty,
-            rejectQty,
-          };
-        })
+        entry.parts.map((p) => ({
+          modelId: entry.modelId,
+          partId: p.partId,
+          productionQty: p.qty,
+        }))
       );
 
+      // split unified defectLog into the two arrays the schema actually expects
+      const rejects = defectLog
+        .filter((d) => d.defectType === "Reject")
+        .map((d) => ({
+          modelId: d.modelId,
+          partId: d.partId,
+          rejectTypeId: d.defectTypeId,
+          quantity: d.quantity,
+        }));
+
+      const reworks = defectLog
+        .filter((d) => d.defectType === "Rework")
+        .map((d) => ({
+          modelId: d.modelId,
+          partId: d.partId,
+          reworkTypeId: d.defectTypeId,
+          quantity: d.quantity,
+        }));
+
       const payload = {
-        reportedBy:      user?._id,
-        reportedByName:  user?.name,
-        reportedByEmail: user?.email,
-        plantId:   user?.plantId?._id || user?.plantId,
-        plantName: user?.plantId?.plantName || user?.plantName || "",
-        location:  user?.plantId?.location || user?.location || "",
+        reportedBy: user?._id,
         shift,
-        reportDate:  dayjs().toISOString(),
-        reportTime:  dayjs().format("HH:mm"),
         requiredManpower,
         availableManpower,
-        shortManpower: shortageManpower,
         productions,
-        defects: defectLog.map((d) => ({
-          type:        d.defectType,
-          modelId:     d.modelId,
-          partId:      d.partId,
-          defectTypeId: d.defectTypeId,
-          defectModel: d.defectType,
-          quantity:    d.quantity,
-        })),
+        rejects,
+        reworks,
         downtimes: downtimes.map(({ key, ...d }) => ({
           ...d,
           startTime: d.startTime ? dayjs(d.startTime).toISOString() : null,
           endTime:   d.endTime   ? dayjs(d.endTime).toISOString()   : null,
         })),
         consumables: consumableLog.map(({ key, ...c }) => c),
-        totalProductionQty:     productionTotals,
-        totalRejectQty:         defectTotals.reject,
-        totalReworkQty:         defectTotals.rework,
-        totalPlannedDowntime:   downtimeTotals.planned,
-        totalUnplannedDowntime: downtimeTotals.unplanned,
-        totalDowntime:          downtimeTotals.total,
+        finalRemark: "",
         status: "Submitted",
       };
-
+      
       await API.post("/production", payload);
       message.success("Production entry submitted successfully!");
 
@@ -799,12 +809,10 @@ export default function UserProductionPage() {
             <Tooltip title="Refresh all master data">
               <Button
                 size="small"
-                icon={<RefreshCcw size={13} />}
+                icon={<RefreshCcw size={20} />}
                 loading={refreshing}
                 onClick={handleRefresh}
-                className="!rounded-lg !text-slate-600 !border-slate-300 !bg-white hover:!border-teal-400 hover:!text-teal-600 transition-all"
               >
-                Refresh
               </Button>
             </Tooltip>
 
@@ -818,7 +826,6 @@ export default function UserProductionPage() {
                 className="!rounded-lg !font-semibold !text-white"
                 style={{ backgroundColor: "#059669", borderColor: "#059669" }}
               >
-                Excel Report
               </Button>
             </Tooltip>
           </div>
@@ -890,7 +897,6 @@ export default function UserProductionPage() {
                 onClick={handleLogout}
                 className="!rounded-lg !font-semibold !text-red-600 !border-red-200 !bg-red-50 hover:!bg-red-100 hover:!border-red-300 transition-all"
               >
-                Logout
               </Button>
             </Tooltip>
           </div>
@@ -910,7 +916,7 @@ export default function UserProductionPage() {
             </SectionHead>
           </div>
           <div className="px-5 py-4">
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
               {/* Shift selector */}
               <div className="col-span-2 md:col-span-1">
                 <label className={LABEL}>Shift *</label>
@@ -949,16 +955,57 @@ export default function UserProductionPage() {
                 <label className={LABEL}>Plant</label>
                 <div className={FIELD}>{user?.plantId?.plantName || user?.plantName || "—"}</div>
               </div>
-              {/* Location */}
+               {/* Location */}
               <div>
                 <label className={LABEL}>Location</label>
                 <div className={FIELD}>{user?.plantId?.location || user?.location || "—"}</div>
               </div>
+              {/* Total Target */}
+              <div>
+                <label className={LABEL}>Total Target</label>
+                <Tooltip
+                  title={
+                    plantStrengths.length > 0
+                      ? plantStrengths.map((s, i) => `${s.conveyorName || `Line ${i + 1}`}: ${s.demandPerShift ?? 0}`).join("  ·  ")
+                      : "No active conveyor lines configured for this plant"
+                  }
+                >
+                  <div className={`${FIELD} text-teal-700 font-bold cursor-help flex items-center justify-between gap-1`}>
+                    <span>{plantTotalTarget}</span>
+                    {plantStrengths.length > 0 && (
+                      <span className="text-[10px] font-semibold text-teal-600 bg-teal-100 rounded-full px-1.5 py-0.5 whitespace-nowrap">
+                        {plantStrengths.length} {plantStrengths.length === 1 ? "line" : "lines"}
+                      </span>
+                    )}
+                  </div>
+                </Tooltip>
+              </div>
             </div>
+
+            {/* Per-line target breakdown — only shown when the plant runs more than one active conveyor line */}
+            {plantStrengths.length > 1 && (
+              <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Target Breakdown:
+                </span>
+                {plantStrengths.map((s, i) => (
+                  <span
+                    key={s._id || i}
+                    className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700"
+                  >
+                    {s.conveyorName || `Line ${i + 1}`}: {s.demandPerShift ?? 0}
+                  </span>
+                ))}
+                <span className="text-xs font-bold text-slate-500">
+                  = {plantTotalTarget} total
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
         {/* ─── 2. PRODUCTION ENTRY ──────────────────────── */}
+        
         <div className={CARD}>
           <div className="px-5 py-4 border-b border-slate-100">
             <SectionHead icon={Package} border="#2563eb" color="text-blue-600">
@@ -1373,6 +1420,7 @@ export default function UserProductionPage() {
       </div>
 
       {/* ══════════════════════════════════════════════════
+      
           STICKY SAVE FOOTER
       ══════════════════════════════════════════════════ */}
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-5 py-3">
@@ -1434,6 +1482,12 @@ export default function UserProductionPage() {
               <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
                 <span className="text-slate-500">Total Production Qty</span>
                 <span className="font-semibold text-teal-700">{productionTotals}</span>
+              </div>
+              <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
+                <span className="text-slate-500">Achievement %</span>
+                <span className={`font-semibold ${achievementPercent >= 90 ? "text-green-600" : achievementPercent >= 70 ? "text-amber-600" : "text-red-500"}`}>
+                  {achievementPercent}%
+                </span>
               </div>
               <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
                 <span className="text-slate-500">Total Defects (Reject + Rework)</span>

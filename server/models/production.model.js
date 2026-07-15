@@ -7,6 +7,9 @@ const productionItemSchema = new mongoose.Schema({
   modelId: { type: mongoose.Schema.Types.ObjectId, ref: "Model", required: true },
   partId: { type: mongoose.Schema.Types.ObjectId, ref: "Part", required: true },
   productionQty: { type: Number, default: 0 },
+  demandPerShift:     { type: Number, default: 0 },
+  achievementPercent: { type: Number, default: 0, min: 0 }, // (totalProductionQty / demandPerShift) *100
+          
 }, { _id: false });
 
 /* ========================= REJECT ROW ========================= */
@@ -54,16 +57,29 @@ const productionEntrySchema = new mongoose.Schema({
   employeeName: { type: String, trim: true },
   employeeEmail: { type: String, trim: true },
   role: { type: String, trim: true },
-  shift: 1,
-
+  
   // plant info (snapshot at time of entry)
   plantId: { type: mongoose.Schema.Types.ObjectId, ref: "Plant", required: true },
   plantName: { type: String, trim: true },
   location: { type: String, trim: true },
 
   // shift
-  shift: { type: String, enum: ["Day", "Night"], required: true },
-  reportTime: { type: Date, default: Date.now },
+  shift: { type: String, 
+    enum: ["Day", "Night"], 
+    required: true 
+  },
+
+  
+
+  reportTime: { 
+    type: Date, 
+    default: Date.now 
+  },
+  entryDate: {
+    type: Date,
+    default:Date.now,
+    required: true,
+  },
 
   // manpower
   requiredManpower: { type: Number, default: 0 },
@@ -90,7 +106,23 @@ const productionEntrySchema = new mongoose.Schema({
   totalDefectQty: { type: Number, default: 0 }, // = totalRejectQty + totalReworkQty
   finalRemark: { type: String, trim: true, default: "" },
   status: { type: String, enum: ["Draft", "Submitted","Rejected"], default: "Submitted" },
+  shiftSummary: {
+  target:      { type: Number, default: 0 },
+  achieved:    { type: Number, default: 0 },
+  achievement: { type: Number, default: 0, min: 0 },
+}
 }, { timestamps: true });
+
+productionEntrySchema.index(
+  {
+    plantId: 1,
+    shift: 1,
+    entryDate: 1,
+  },
+  {
+    unique: true,
+  }
+);
 
 
 export default mongoose.model("ProductionEntry", productionEntrySchema);

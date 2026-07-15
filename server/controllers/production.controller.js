@@ -1,5 +1,18 @@
 import ProductionEntry from "../models/production.model.js";
 import User from "../models/users.model.js";
+import PlantStrength from "../models/plantStrength.model.js";
+import Plant from "../models/plants.model.js";
+import model from "../models/models.model.js";
+import part from "../models/parts.model.js";
+import reject from "../models/reject.model.js";
+import rework from "../models/rework.model.js";
+import downtime from "../models/downTime.model.js";
+import downtimeType from "../models/downtimeTypes.model.js";
+import consumable from "../models/consumable.model.js";
+import shift from "../models/ShiftModel.js";
+import defect from "../models/defects.model.js";
+import material from "../models/material.model.js";
+
 
 /* ========================= POPULATE CONFIG ========================= */
 
@@ -45,6 +58,7 @@ export const createProductionEntry = async (req, res) => {
     if (!productions.length) return res.status(400).json({ success: false, message: "Add at least one model to the production list" });
 
     const user = await User.findById(reportedBy).populate("plantId");
+
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     if (!user.plantId) return res.status(404).json({ success: false, message: "User has no plant assigned" });
 
@@ -56,6 +70,13 @@ export const createProductionEntry = async (req, res) => {
     for (const row of [...rejects, ...reworks]) {
       if (!row.modelId || !row.partId) return res.status(400).json({ success: false, message: "Model and Part are required in every reject/rework row" });
     }
+
+     // PlantStrength is a plant-level config (conveyor/shift setup), not per model/part.
+    // A plant can have multiple active strength profiles (multiple conveyors/lines),
+    // so the shift target is the sum of demandPerShift across all active profiles.
+    const strengths = await PlantStrength.find({ plantId: plant._id, status: "Active" }).lean();
+    const plantDemandPerShift = strengths.reduce((sum, s) => sum + (s.demandPerShift || 0), 0);
+
 
     const formattedDowntimes = downtimes.map((item) => {
       if (item.type === "Unplanned" && wordCount(item.remark) > 10) {
@@ -72,14 +93,24 @@ export const createProductionEntry = async (req, res) => {
     const totalProductionQty = sumBy(productions, "productionQty") + totalReworkQty; // rework auto-counts into production
     const totalDefectQty = totalRejectQty + totalReworkQty;
 
+    // shift-level target vs achieved, using the plant's own demand (not per model/part)
+    const shiftSummary = {
+      target: plantDemandPerShift,
+      achieved: totalProductionQty,
+      achievement: plantDemandPerShift > 0
+        ? parseFloat(((totalProductionQty / plantDemandPerShift) * 100).toFixed(2))
+        : 0,
+    };
+
     const newEntry = await ProductionEntry.create({
       reportedBy: user._id, employeeName: user.name, employeeEmail: user.email, role: user.role,
+      entryDate:  new Date(new Date().toISOString().slice(0, 10)),
       plantId: plant._id, plantName: plant.plantName, location: plant.location,
       shift, reportTime: new Date(),
       requiredManpower, availableManpower, shortageManpower: Math.max(requiredManpower - availableManpower, 0),
       productions, rejects, reworks, downtimes: formattedDowntimes,
       totalPlannedDowntime, totalUnplannedDowntime, totalDowntime: totalPlannedDowntime + totalUnplannedDowntime,
-      consumables, totalProductionQty, totalRejectQty, totalReworkQty, totalDefectQty, finalRemark, status,
+      consumables, totalProductionQty, totalRejectQty, totalReworkQty, totalDefectQty, finalRemark, shiftSummary,
     });
 
     return res.status(201).json({ success: true, message: "Production entry created successfully", data: newEntry });
@@ -93,20 +124,29 @@ export const createProductionEntry = async (req, res) => {
 
 export const getproductions = async (req, res) => {
   try {
-    const { plantId, shift, status, from, to } = req.query;
+    const {  shift,  from, to } = req.query;
+    console.log("GET PRODUCTION ENTRIES REQUEST:", {  shift, from, to });
 
-    const filter = {};
+    const user = await User.findById(req.user.id);
+    const plantId = user?.plantId;
+    console.log("Authenticated user:", req.user.id, "Plant ID:", plantId);
+
+   const filter = {};
     if (plantId) filter.plantId = plantId;
     if (shift) filter.shift = shift;
-    if (status) filter.status = status;
-    if (from || to) filter.createdAt = { ...(from && { $gte: new Date(from) }), ...(to && { $lte: new Date(to) }) };
+    if (from || to) {
+      filter.entryDate = {};
+      if (from) filter.entryDate.$gte = new Date(from);
+      if (to)   filter.entryDate.$lte = new Date(to);
+    }
 
     const entries = await ProductionEntry.find(filter).populate(POPULATE).sort({ createdAt: -1 });
+    const plantStrengths = plantId ? await PlantStrength.find({ plantId, status: "Active" }) : [];
 
-    return res.status(200).json({ success: true, message: "Production entries fetched successfully", data: entries });
+    return res.status(200).json({ success: true, message: "Production entries fetched successfully", data: entries, plantStrengths });
   } catch (error) {
     console.error("GET PRODUCTION ENTRIES ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch production entries" });
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch production entries" });
   }
 };
 

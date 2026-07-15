@@ -449,7 +449,7 @@ export default function UserMasterPage() {
   ];
 
   /* ─────────────── PLANT SELECT OPTIONS ─────────────── */
-  const plantOptions = plants.map((p) => ({ label: p.plantName, value: p._id }));
+  const plantOptions = plants.map((p) => ({ label: `${p.plantName}-${p.location}`, value: p._id }));
 
   /* ─────────────── RENDER ─────────────── */
   return (
@@ -712,7 +712,7 @@ export default function UserMasterPage() {
                     ? <Select value={draftPlantId || undefined} onChange={setDraftPlantId}
                         options={plantOptions} placeholder="Select plant"
                         style={{ width: "100%" }} size="large" />
-                    : <ValueBox>{selectedUser.plantId?.plantName || "—"}</ValueBox>
+                    : <ValueBox>{`${selectedUser.plantId?.plantName} - ${selectedUser.plantId?.location}` || "—"}</ValueBox>
                   }
                 </div>
 

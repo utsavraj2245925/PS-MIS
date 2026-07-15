@@ -127,7 +127,7 @@ function App() {
           path="/production-records"
           element={
             <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin", "PLANT_ADMIN","plantAdmin", "MANAGER" , "manager","user","USER"]}>
-              <DashboardLayout><ProductionRecordsPage /></DashboardLayout>
+              <ProductionRecordsPage />
             </ProtectedRoute>
           }
         />

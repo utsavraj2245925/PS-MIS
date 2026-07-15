@@ -85,7 +85,6 @@ const KpiCard = ({ icon: Icon, label, value, tone }) => {
    MAIN PAGE
 ────────────────────────────────────────────────────────── */
 export default function UserProductionPage() {
-
   /* ── auth + routing ── */
   const { logout, user, setUser } = useAuth();
   const navigate   = useNavigate();
@@ -106,6 +105,7 @@ export default function UserProductionPage() {
   const [reworkTypes, setReworkTypes] = useState([]);
   const [downtimeTypes, setDowntimeTypes] = useState([]);
   const [materials, setMaterials]     = useState([]);
+  const [plantStrengths, setPlantStrengths] = useState([]);
 
   /* ── shift ── */
   const [shift, setShift] = useState("Day");
@@ -191,6 +191,13 @@ export default function UserProductionPage() {
     setMaterials(data?.data || []);
   }, []);
 
+  /** Reuses getproductions — only plantStrengths from the response is used here */
+  const fetchPlantStrengths = useCallback(async () => {
+    const today = dayjs().format("YYYY-MM-DD");
+    const { data } = await API.get("/production", { params: { from: today, to: today } });
+    setPlantStrengths(data?.plantStrengths || []);
+  }, []);
+
   const loadEverything = useCallback(async () => {
     setPageLoading(true);
     try {
@@ -200,6 +207,7 @@ export default function UserProductionPage() {
         fetchReworkTypes(), 
         fetchDowntimeTypes(), 
         fetchMaterials(),
+        fetchPlantStrengths(),
       ]);
     } catch (error) {
       console.error("Error loading data:", error);
@@ -207,7 +215,7 @@ export default function UserProductionPage() {
     } finally {
       setPageLoading(false);
     }
-  }, [ fetchModels, fetchRejectTypes, fetchReworkTypes, fetchDowntimeTypes, fetchMaterials]);
+  }, [ fetchModels, fetchRejectTypes, fetchReworkTypes, fetchDowntimeTypes, fetchMaterials, fetchPlantStrengths]);
 
   useEffect(() => { loadEverything(); }, [loadEverything]);
 
@@ -464,6 +472,16 @@ export default function UserProductionPage() {
     return production;
   }, [productionLog]);
 
+  const plantTotalTarget = useMemo(
+    () => plantStrengths.reduce((sum, p) => sum + (p.demandPerShift || 0), 0),
+    [plantStrengths]
+  );
+
+  const achievementPercent = useMemo(
+    () => (plantTotalTarget > 0 ? parseFloat(((productionTotals / plantTotalTarget) * 100).toFixed(2)) : 0),
+    [productionTotals, plantTotalTarget]
+  );
+
   /* ════════════════════════════════════════════════════════
      VALIDATION
   ════════════════════════════════════════════════════════ */
@@ -499,62 +517,53 @@ export default function UserProductionPage() {
     setConfirmSaveOpen(false);
     setSaving(true);
     try {
-      // flatten productionLog to productionEntries (per part row)
-      const productionEntries = productionLog.flatMap((entry) =>
-        entry.parts.map((p) => {
-          const reworkQty = defectLog
-            .filter((d) => d.modelId === entry.modelId && d.partId === p.partId && d.defectType === "Rework")
-            .reduce((s, d) => s + (d.quantity || 0), 0);
-          const rejectQty = defectLog
-            .filter((d) => d.modelId === entry.modelId && d.partId === p.partId && d.defectType === "Reject")
-            .reduce((s, d) => s + (d.quantity || 0), 0);
-          return {
-            modelId: entry.modelId,
-            partId: p.partId,
-            productionQty: p.qty,
-            reworkQty,
-            rejectQty,
-          };
-        })
+     // schema only wants modelId/partId/productionQty — server itself computes
+      // demandPerShift + achievementPercent from PlantStrength
+      const productions = productionLog.flatMap((entry) =>
+        entry.parts.map((p) => ({
+          modelId: entry.modelId,
+          partId: p.partId,
+          productionQty: p.qty,
+        }))
       );
 
+      // split unified defectLog into the two arrays the schema actually expects
+      const rejects = defectLog
+        .filter((d) => d.defectType === "Reject")
+        .map((d) => ({
+          modelId: d.modelId,
+          partId: d.partId,
+          rejectTypeId: d.defectTypeId,
+          quantity: d.quantity,
+        }));
+
+      const reworks = defectLog
+        .filter((d) => d.defectType === "Rework")
+        .map((d) => ({
+          modelId: d.modelId,
+          partId: d.partId,
+          reworkTypeId: d.defectTypeId,
+          quantity: d.quantity,
+        }));
+
       const payload = {
-        reportedBy:      user?._id,
-        reportedByName:  user?.name,
-        reportedByEmail: user?.email,
-        plantId:   user?.plantId?._id || user?.plantId,
-        plantName: user?.plantId?.plantName || user?.plantName || "",
-        location:  user?.plantId?.location || user?.location || "",
+        reportedBy: user?._id,
         shift,
-        reportDate:  dayjs().toISOString(),
-        reportTime:  dayjs().format("HH:mm"),
         requiredManpower,
         availableManpower,
-        shortManpower: shortageManpower,
-        productionEntries,
-        defects: defectLog.map((d) => ({
-          type:        d.defectType,
-          modelId:     d.modelId,
-          partId:      d.partId,
-          defectTypeId: d.defectTypeId,
-          defectModel: d.defectType,
-          quantity:    d.quantity,
-        })),
+        productions,
+        rejects,
+        reworks,
         downtimes: downtimes.map(({ key, ...d }) => ({
           ...d,
           startTime: d.startTime ? dayjs(d.startTime).toISOString() : null,
           endTime:   d.endTime   ? dayjs(d.endTime).toISOString()   : null,
         })),
         consumables: consumableLog.map(({ key, ...c }) => c),
-        totalProductionQty:     productionTotals,
-        totalRejectQty:         defectTotals.reject,
-        totalReworkQty:         defectTotals.rework,
-        totalPlannedDowntime:   downtimeTotals.planned,
-        totalUnplannedDowntime: downtimeTotals.unplanned,
-        totalDowntime:          downtimeTotals.total,
+        finalRemark: "",
         status: "Submitted",
       };
-
+      
       await API.post("/production", payload);
       message.success("Production entry submitted successfully!");
 
@@ -724,7 +733,6 @@ export default function UserProductionPage() {
   return (
     <div className="min-h-screen bg-slate-100">
 
-      
 
       {/* ══════════════════════════════════════════════════
           PAGE BODY
@@ -736,21 +744,23 @@ export default function UserProductionPage() {
           <div className="px-5 py-4 border-b border-slate-100">
             <SectionHead icon={Clock3} border="#0d9488" color="text-teal-600">
               Shift Information
+               <div className="ml-auto flex items-center gap-2">
+              {/* Back to Records */}
+                          <Tooltip title="Back to Production Records">
+                            <Button
+                              size="small"
+                              icon={<ArrowLeft size={13} />}
+                              onClick={() => navigate("/production-records")}
+                              className="!rounded-lg !font-semibold !text-slate-600 !border-slate-300 !bg-white hover:!border-teal-400 hover:!text-teal-600 transition-all"
+                            >
+                              Records
+                            </Button>
+                          </Tooltip>
+                      </div>
             </SectionHead>
-            {/* Back to Records */}
-            <Tooltip title="Back to Production Records">
-              <Button
-                size="small"
-                icon={<ArrowLeft size={13} />}
-                onClick={() => navigate("/production-records")}
-                className="!rounded-lg !font-semibold !text-slate-600 !border-slate-300 !bg-white hover:!border-teal-400 hover:!text-teal-600 transition-all"
-              >
-                Records
-              </Button>
-            </Tooltip>
           </div>
           <div className="px-5 py-4">
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
               {/* Shift selector */}
               <div className="col-span-2 md:col-span-1">
                 <label className={LABEL}>Shift *</label>
@@ -789,10 +799,15 @@ export default function UserProductionPage() {
                 <label className={LABEL}>Plant</label>
                 <div className={FIELD}>{user?.plantId?.plantName || user?.plantName || "—"}</div>
               </div>
-              {/* Location */}
+               {/* Location */}
               <div>
                 <label className={LABEL}>Location</label>
                 <div className={FIELD}>{user?.plantId?.location || user?.location || "—"}</div>
+              </div>
+              {/* Total Target */}
+              <div>
+                <label className={LABEL}>Total Target</label>
+                <div className={`${FIELD} text-teal-700 font-bold`}>{plantTotalTarget}</div>
               </div>
             </div>
           </div>
@@ -963,16 +978,16 @@ export default function UserProductionPage() {
                 <table className="w-full">
                   <thead>
                     <tr>
-                      {["#", "Type", "Model", "Part", "Defect Name", "Qty", ""].map((h) => (
-                        <th key={h} className={TH}>{h}</th>
+                      {["#", "Type", "Model", "Part", "Defect Name", "Qty", "Actions"].map((h) => (
+                        <th key={h} className={TH} style={{ textAlign:"start" }} >{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {defectLog.map((row, i) => (
-                      <tr key={row.key} className="hover:bg-slate-50/50">
-                        <td className={`${TD} text-slate-400`}>{i + 1}</td>
-                        <td className={TD}>
+                      <tr key={row.key} className="hover:bg-slate-50/50 ">
+                        <td className={`${TD} text-slate-400 `}>{i + 1}</td>
+                        <td className={`${TD} `}>
                           <Tag color={row.defectType === "Reject" ? "red" : "orange"}
                             className="!rounded-lg !font-semibold">
                             {row.defectType}
@@ -1053,7 +1068,7 @@ export default function UserProductionPage() {
               Downtime Details
             </SectionHead>
             <Button size="small" icon={<Plus size={13} />} onClick={handleAddDowntimeRow}
-              className="!rounded-xl !border-amber-400 !text-amber-600 hover:!bg-amber-50">
+              className="!rounded-xl !border-amber-400 !text-black-900 hover:!bg-amber-50">
               Add Downtime
             </Button>
           </div>
@@ -1274,6 +1289,12 @@ export default function UserProductionPage() {
               <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
                 <span className="text-slate-500">Total Production Qty</span>
                 <span className="font-semibold text-teal-700">{productionTotals}</span>
+              </div>
+              <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
+                <span className="text-slate-500">Achievement %</span>
+                <span className={`font-semibold ${achievementPercent >= 90 ? "text-green-600" : achievementPercent >= 70 ? "text-amber-600" : "text-red-500"}`}>
+                  {achievementPercent}%
+                </span>
               </div>
               <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
                 <span className="text-slate-500">Total Defects (Reject + Rework)</span>

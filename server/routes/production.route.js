@@ -6,8 +6,11 @@ import {
   updateProductionEntry,
   deleteProductionEntry,
 } from "../controllers/production.controller.js";
+import { isAuthenticated } from "../Auth/isAuthenticated.js";
 
 const router = express.Router();
+
+router.use(isAuthenticated);
 
 router.post("/", createProductionEntry);
 router.get("/", getproductions);
@@ -16,4 +19,3 @@ router.put("/:id", updateProductionEntry);
 router.delete("/:id", deleteProductionEntry);
 
 export default router;
-
