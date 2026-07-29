@@ -9,6 +9,8 @@ import UserMasterPage from "./pages/UserMasterPage";
 import ManageDefectsPage from "./pages/ManageDefectsPage";
 import ManageMaterialPage from "./pages/ManageMaterialPage";
 import ManageDowntimePage from "./pages/ManageDowntimePage";
+import ManageShiftPage from "./pages/ManageShiftPage";
+import ManageConveyorPage from "./pages/ManageConveyorPage";
 
 
 import ProductionEntryPage from "./pages/ProductionEntryPage";
@@ -62,6 +64,16 @@ function App() {
               <DashboardLayout><PlantMasterPage /></DashboardLayout>
             </ProtectedRoute>
           }
+        />
+        <Route
+            path="/manage-conveyor"
+            element={
+                <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin"]}>
+                    <DashboardLayout>
+                        <ManageConveyorPage />
+                    </DashboardLayout>
+                </ProtectedRoute>
+            }
         />
 
         {/* MODEL MASTER */}
@@ -121,6 +133,18 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+            path="/manage-shift"
+            element={
+                <ProtectedRoute allowedRoles={["SUPER_ADMIN","superAdmin"]}>
+                    <DashboardLayout>
+                        <ManageShiftPage/>
+                    </DashboardLayout>
+                </ProtectedRoute>
+            }
+        />
+
    
         {/* PRODUCTION RECORDS — only admins/managers land here; USER role is redirected */}
         <Route

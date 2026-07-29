@@ -21,15 +21,15 @@ const avatarColor = (seed = "") => {
 };
 
 /* ─────────────────────────────────────────────
-   FIELD LABEL  (matches UserMaster / PlantMaster)
+   FIELD LABEL
 ───────────────────────────────────────────── */
 const FieldLabel = ({ icon: Icon, label, required }) => (
   <label style={{
-    display: "flex", alignItems: "center", gap: 5,
-    fontSize: 11.5, fontWeight: 600, color: "#475569",
-    marginBottom: 5, letterSpacing: 0.2,
+    display: "flex", alignItems: "center", gap: 4,
+    fontSize: 10.5, fontWeight: 600, color: "#475569",
+    marginBottom: 4, letterSpacing: 0.2,
   }}>
-    {Icon && <Icon size={12} color="#94A3B8" />}
+    {Icon && <Icon size={10} color="#94A3B8" />}
     {label}
     {required && <span style={{ color: "#F43F5E" }}>*</span>}
   </label>
@@ -42,7 +42,7 @@ const IconBtn = ({ onClick, bg, fg, title, children }) => (
   <Tooltip title={title}>
     <button onClick={onClick} style={{
       background: bg, color: fg, border: "none",
-      width: 30, height: 30, borderRadius: 8,
+      width: 24, height: 24, borderRadius: 7,
       display: "inline-flex", alignItems: "center", justifyContent: "center",
       cursor: "pointer", flexShrink: 0,
     }}>
@@ -57,9 +57,9 @@ const IconBtn = ({ onClick, bg, fg, title, children }) => (
 const ValueBox = ({ children }) => (
   <div style={{
     background: "#F8FAFC", border: "1px solid #F1F5F9",
-    borderRadius: 10, padding: "9px 12px",
-    fontSize: 13, color: "#0F172A", fontWeight: 500,
-    minHeight: 38, display: "flex", alignItems: "center",
+    borderRadius: 8, padding: "7px 10px",
+    fontSize: 12, color: "#0F172A", fontWeight: 500,
+    minHeight: 30, display: "flex", alignItems: "center",
   }}>
     {children || "—"}
   </div>
@@ -72,13 +72,13 @@ const StatusTag = ({ status }) => {
   const active = status === "active" || status === "Active";
   return (
     <span style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
+      display: "inline-flex", alignItems: "center", gap: 4,
       background: active ? "#DCFCE7" : "#FFF1F2",
       color: active ? "#15803D" : "#BE123C",
-      fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+      fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999,
     }}>
       <span style={{
-        width: 6, height: 6, borderRadius: 999,
+        width: 4.5, height: 4.5, borderRadius: 999,
         background: active ? "#22C55E" : "#F43F5E", flexShrink: 0,
       }} />
       {status || "Active"}
@@ -186,17 +186,17 @@ export default function ModelMasterPage() {
       dataIndex: "modelName",
       key: "modelName",
       render: (_, m) => (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Avatar
-            size={34}
+            size={26}
             style={{
               background: avatarColor(m.modelName),
-              fontWeight: 700, fontSize: 12, flexShrink: 0,
+              fontWeight: 700, fontSize: 10, flexShrink: 0,
             }}
           >
             {initials(m.modelName)}
           </Avatar>
-          <span style={{ fontWeight: 600, fontSize: 13, color: "#0F172A" }}>
+          <span style={{ fontWeight: 600, fontSize: 12, color: "#0F172A" }}>
             {m.modelName}
           </span>
         </div>
@@ -205,15 +205,15 @@ export default function ModelMasterPage() {
     {
       title: "Status",
       key: "status",
-      width: 110,
+      width: 90,
       render: (_, m) => <StatusTag status={m.status} />,
     },
     {
       title: "Created",
       key: "createdAt",
-      width: 120,
+      width: 100,
       render: (_, m) => (
-        <span style={{ fontSize: 11.5, color: "#94A3B8" }}>
+        <span style={{ fontSize: 10.5, color: "#94A3B8" }}>
           {m.createdAt ? new Date(m.createdAt).toLocaleDateString() : "—"}
         </span>
       ),
@@ -221,11 +221,11 @@ export default function ModelMasterPage() {
     {
       title: "",
       key: "actions",
-      width: 80,
+      width: 66,
       render: (_, m) => (
-        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
           <IconBtn title="Edit" bg="#FFFBEB" fg="#B45309" onClick={() => openEdit(m)}>
-            <Pencil size={13} />
+            <Pencil size={11} />
           </IconBtn>
           <Popconfirm
             title="Delete this model?"
@@ -235,10 +235,10 @@ export default function ModelMasterPage() {
           >
             <button style={{
               background: "#FFF1F2", color: "#BE123C", border: "none",
-              width: 30, height: 30, borderRadius: 8,
+              width: 24, height: 24, borderRadius: 7,
               display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
             }}>
-              <Trash2 size={13} />
+              <Trash2 size={11} />
             </button>
           </Popconfirm>
         </div>
@@ -252,38 +252,38 @@ export default function ModelMasterPage() {
   return (
     <div style={{
       minHeight: "100vh", background: "#F8FAFC",
-      fontFamily: "'IBM Plex Sans', sans-serif", padding: "28px 32px",
+      fontFamily: "'IBM Plex Sans', sans-serif", padding: "20px 23px",
     }}>
       <CSS />
 
       {/* ── HEADER ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 17 }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{
-              width: 36, height: 36, borderRadius: 11,
+              width: 27, height: 27, borderRadius: 8,
               background: "linear-gradient(135deg,#0E7490,#0891B2)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 6px 14px -4px rgba(14,116,144,0.4)",
+              boxShadow: "0 4px 10px -3px rgba(14,116,144,0.4)",
             }}>
-              <Box size={18} color="#fff" />
+              <Box size={14} color="#fff" />
             </div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0F172A", margin: 0 }}>
+            <h1 style={{ fontSize: 17, fontWeight: 700, color: "#0F172A", margin: 0 }}>
               Model Master
             </h1>
           </div>
-          <p style={{ color: "#64748B", fontSize: 13, margin: "4px 0 0 46px" }}>
+          <p style={{ color: "#64748B", fontSize: 11, margin: "3px 0 0 35px" }}>
             Product model registry for your plant
           </p>
         </div>
 
         <button onClick={openAdd} style={S.primaryBtn}>
-          <Plus size={15} /> Add Model
+          <Plus size={12} /> Add Model
         </button>
       </div>
 
       {/* ── STAT CARDS ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 15 }}>
         {[
           { label: "Total Models",  value: totalModels,  icon: Box,     tint: "#0E7490", bg: "#ECFEFF" },
           { label: "Active Models", value: activeModels, icon: Factory, tint: "#15803D", bg: "#F0FDF4" },
@@ -292,14 +292,14 @@ export default function ModelMasterPage() {
           return (
             <div key={c.label} style={S.statCard}>
               <div>
-                <p style={{ color: "#64748B", fontSize: 12, margin: 0, fontWeight: 500 }}>{c.label}</p>
-                <h3 style={{ fontSize: 28, fontWeight: 700, color: "#0F172A", margin: "4px 0 0" }}>{c.value}</h3>
+                <p style={{ color: "#64748B", fontSize: 10.5, margin: 0, fontWeight: 500 }}>{c.label}</p>
+                <h3 style={{ fontSize: 20, fontWeight: 700, color: "#0F172A", margin: "3px 0 0" }}>{c.value}</h3>
               </div>
               <div style={{
-                width: 40, height: 40, borderRadius: 11,
+                width: 30, height: 30, borderRadius: 8,
                 background: c.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
               }}>
-                <Icon size={19} color={c.tint} />
+                <Icon size={14} color={c.tint} />
               </div>
             </div>
           );
@@ -308,21 +308,21 @@ export default function ModelMasterPage() {
 
       {/* ── SEARCH ── */}
       <div style={S.panel}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }} className="mm-filters">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }} className="mm-filters">
           <div style={{ position: "relative" }}>
-            <Search size={15} style={{
-              position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)",
+            <Search size={13} style={{
+              position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)",
               color: "#94A3B8", pointerEvents: "none",
             }} />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search model name or plant…"
-              style={{ ...S.input, paddingLeft: 34 }}
+              style={{ ...S.input, paddingLeft: 28 }}
             />
           </div>
           <button onClick={() => setSearch("")} style={S.ghostBtn}>
-            <RotateCcw size={14} /> Reset
+            <RotateCcw size={12} /> Reset
           </button>
         </div>
       </div>
@@ -330,10 +330,10 @@ export default function ModelMasterPage() {
       {/* ── TABLE ── */}
       <div style={{ ...S.panel, padding: 0, overflow: "hidden" }}>
         <div style={{
-          padding: "14px 20px", borderBottom: "1px solid #F1F5F9",
+          padding: "10px 14px", borderBottom: "1px solid #F1F5F9",
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: "#0F172A", margin: 0 }}>Model Directory</h2>
+          <h2 style={{ fontSize: 12.5, fontWeight: 700, color: "#0F172A", margin: 0 }}>Model Directory</h2>
           <Badge
             count={filtered.length} showZero
             style={{ backgroundColor: "#ECFEFF", color: "#0E7490", fontWeight: 600 }}
@@ -349,7 +349,7 @@ export default function ModelMasterPage() {
           })}
           locale={{
             emptyText: (
-              <div style={{ padding: "48px 0" }}>
+              <div style={{ padding: "38px 0" }}>
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description={<span style={{ color: "#64748B" }}>No models yet. Click "Add Model" to create one.</span>} />
               </div>
@@ -365,33 +365,33 @@ export default function ModelMasterPage() {
         open={formOpen}
         onCancel={() => { setFormOpen(false); resetForm(); }}
         footer={null} centered destroyOnHidden mask={{closable:false}}
-        width={460} closeIcon={<X size={17} />}
+        width={370} closeIcon={<X size={14} />}
         styles={{ header: { padding: 0 }, body: { padding: 0 } }}
       >
         {/* Gradient header — matches UserMaster / PlantMaster */}
         <div style={{
           background: "linear-gradient(135deg,#0E7490,#155E75)",
-          padding: "20px 26px", borderRadius: "8px 8px 0 0",
-          display: "flex", alignItems: "center", gap: 12,
+          padding: "15px 20px", borderRadius: "7px 7px 0 0",
+          display: "flex", alignItems: "center", gap: 9,
         }}>
           <div style={{
-            width: 34, height: 34, borderRadius: 10,
+            width: 27, height: 27, borderRadius: 8,
             background: "rgba(255,255,255,0.15)",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            {editingId ? <Pencil size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
+            {editingId ? <Pencil size={13} color="#fff" /> : <Plus size={13} color="#fff" />}
           </div>
           <div>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#fff" }}>
+            <h2 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#fff" }}>
               {editingId ? "Edit Model" : "Add New Model"}
             </h2>
-            <p style={{ margin: 0, fontSize: 11.5, color: "rgba(255,255,255,0.65)", marginTop: 2 }}>
+            <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.65)", marginTop: 2 }}>
               {editingId ? "Update the model name" : "Enter a model name to register it under your plant"}
             </p>
           </div>
         </div>
 
-        <div style={{ padding: "24px 26px" }}>
+        <div style={{ padding: "18px 20px" }}>
           <FieldLabel label="Model Name" required />
           <input
             value={modelName}
@@ -401,15 +401,15 @@ export default function ModelMasterPage() {
             style={S.input}
             autoFocus
           />
-          <p style={{ fontSize: 11.5, color: "#94A3B8", margin: "8px 0 0" }}>
+          <p style={{ fontSize: 10, color: "#94A3B8", margin: "7px 0 0" }}>
             Plant will be assigned automatically from your account.
           </p>
         </div>
 
         <div style={{
-          padding: "14px 26px", borderTop: "1px solid #F1F5F9",
-          display: "flex", justifyContent: "flex-end", gap: 10, background: "#FAFAFA",
-          borderRadius: "0 0 8px 8px",
+          padding: "11px 20px", borderTop: "1px solid #F1F5F9",
+          display: "flex", justifyContent: "flex-end", gap: 8, background: "#FAFAFA",
+          borderRadius: "0 0 7px 7px",
         }}>
           <button onClick={() => { setFormOpen(false); resetForm(); }} style={S.ghostBtn}>
             Cancel
@@ -426,7 +426,7 @@ export default function ModelMasterPage() {
       ══════════════════════════════════════ */}
       <Modal
         open={detailOpen} onCancel={() => setDetailOpen(false)}
-        footer={null} width={460} closeIcon={<X size={17} />}
+        footer={null} width={370} closeIcon={<X size={14} />}
         destroyOnHidden
         styles={{ body: { padding: 0 } }}
       >
@@ -435,49 +435,49 @@ export default function ModelMasterPage() {
             {/* Gradient header */}
             <div style={{
               background: "linear-gradient(135deg,#0E7490,#155E75)",
-              padding: "22px 26px 20px", borderRadius: "8px 8px 0 0",
+              padding: "18px 20px 16px", borderRadius: "7px 7px 0 0",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <Avatar size={46} style={{
+              <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                <Avatar size={37} style={{
                   background: avatarColor(selected.modelName),
-                  fontWeight: 700, fontSize: 16,
+                  fontWeight: 700, fontSize: 13,
                   border: "2px solid rgba(255,255,255,0.35)", flexShrink: 0,
                 }}>
                   {initials(selected.modelName)}
                 </Avatar>
                 <div>
-                  <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#fff" }}>
+                  <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#fff" }}>
                     {selected.modelName}
                   </h2>
-                  <div style={{ marginTop: 8 }}>
+                  <div style={{ marginTop: 7 }}>
                     <StatusTag status={selected.status} />
                   </div>
                 </div>
               </div>
             </div>
 
-            <div style={{ padding: "22px 26px" }}>
+            <div style={{ padding: "18px 20px" }}>
 
-              <div style={{ marginBottom: 14 }}>
+              <div style={{ marginBottom: 11 }}>
                 <FieldLabel icon={Factory} label="Plant" />
                 <ValueBox>
-                  <Factory size={12} color="#94A3B8" style={{ marginRight: 6, flexShrink: 0 }} />
+                  <Factory size={11} color="#94A3B8" style={{ marginRight: 5, flexShrink: 0 }} />
                   {selected.plantId?.plantName || "—"}
                 </ValueBox>
               </div>
 
-              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #F1F5F9", fontSize: 12, color: "#94A3B8" }}>
+              <div style={{ marginTop: 11, paddingTop: 11, borderTop: "1px solid #F1F5F9", fontSize: 10.5, color: "#94A3B8" }}>
                 Created {selected.createdAt ? new Date(selected.createdAt).toLocaleString() : "—"}
               </div>
 
-              <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
                 <button onClick={() => setDetailOpen(false)}
                   style={{ ...S.ghostBtn, flex: 1, justifyContent: "center" }}>
                   Close
                 </button>
                 <button onClick={() => { setDetailOpen(false); openEdit(selected); }}
                   style={{ ...S.amberBtn, flex: 1, justifyContent: "center" }}>
-                  <Pencil size={13} /> Edit
+                  <Pencil size={11} /> Edit
                 </button>
                 <Popconfirm
                   title="Delete this model?"
@@ -486,7 +486,7 @@ export default function ModelMasterPage() {
                   onConfirm={() => { setDetailOpen(false); handleDelete(selected._id); }}
                 >
                   <button style={{ ...S.dangerBtn, flex: 1, justifyContent: "center" }}>
-                    <Trash2 size={13} /> Delete
+                    <Trash2 size={11} /> Delete
                   </button>
                 </Popconfirm>
               </div>
@@ -506,14 +506,14 @@ const CSS = () => (
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
     .ant-table-thead > tr > th {
       background: #F8FAFC !important; color: #64748B !important;
-      font-size: 11px !important; font-weight: 700 !important;
-      text-transform: uppercase; letter-spacing: 0.5px;
+      font-size: 9.5px !important; font-weight: 700 !important;
+      text-transform: uppercase; letter-spacing: 0.4px;
       border-bottom: 1px solid #F1F5F9 !important;
     }
     .ant-table-thead > tr > th::before { display: none !important; }
     .ant-table-tbody > tr > td {
       border-bottom: 1px solid #F8FAFC !important;
-      padding: 11px 16px !important;
+      padding: 8px 13px !important;
     }
     .ant-table-tbody > tr:hover > td { background: #F0FDFF !important; }
     .ant-badge-count { box-shadow: none !important; }
@@ -526,49 +526,49 @@ const CSS = () => (
 );
 
 /* ─────────────────────────────────────────────
-   STYLE TOKENS  (identical to UserMaster / PlantMaster)
+   STYLE TOKENS
 ───────────────────────────────────────────── */
 const S = {
   panel: {
     background: "#fff", border: "1px solid #F1F5F9",
-    borderRadius: 18, padding: 18,
-    boxShadow: "0 1px 3px rgba(15,23,42,0.05)", marginBottom: 18,
+    borderRadius: 13, padding: 13,
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)", marginBottom: 13,
   },
   statCard: {
     background: "#fff", border: "1px solid #F1F5F9",
-    borderRadius: 18, padding: "18px 20px",
+    borderRadius: 13, padding: "13px 14px",
     display: "flex", justifyContent: "space-between", alignItems: "flex-start",
     boxShadow: "0 1px 3px rgba(15,23,42,0.04)",
   },
   input: {
-    width: "100%", border: "1px solid #E2E8F0", borderRadius: 10,
-    padding: "9px 12px", fontSize: 13, color: "#0F172A",
+    width: "100%", border: "1px solid #E2E8F0", borderRadius: 8,
+    padding: "7px 9px", fontSize: 12, color: "#0F172A",
     outline: "none", background: "#F8FAFC", boxSizing: "border-box",
-    fontFamily: "inherit", height: 40,
+    fontFamily: "inherit", height: 30,
   },
   primaryBtn: {
     background: "linear-gradient(135deg,#0E7490,#0891B2)",
-    color: "#fff", border: "none", padding: "9px 18px",
-    borderRadius: 11, display: "inline-flex", alignItems: "center",
-    gap: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
-    boxShadow: "0 4px 14px -3px rgba(14,116,144,0.45)",
+    color: "#fff", border: "none", padding: "7px 13px",
+    borderRadius: 8, display: "inline-flex", alignItems: "center",
+    gap: 5, fontSize: 12, fontWeight: 600, cursor: "pointer",
+    boxShadow: "0 3px 10px -3px rgba(14,116,144,0.45)",
   },
   ghostBtn: {
     background: "#fff", color: "#475569", border: "1px solid #E2E8F0",
-    padding: "9px 16px", borderRadius: 11,
+    padding: "7px 12px", borderRadius: 8,
     display: "inline-flex", alignItems: "center",
-    gap: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
+    gap: 5, fontSize: 12, fontWeight: 600, cursor: "pointer",
   },
   amberBtn: {
     background: "#FFFBEB", color: "#B45309", border: "1px solid #FEF3C7",
-    padding: "9px 16px", borderRadius: 11,
+    padding: "7px 12px", borderRadius: 8,
     display: "inline-flex", alignItems: "center",
-    gap: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
+    gap: 5, fontSize: 12, fontWeight: 600, cursor: "pointer",
   },
   dangerBtn: {
     background: "#FFF1F2", color: "#BE123C", border: "1px solid #FFE4E6",
-    padding: "9px 16px", borderRadius: 11,
+    padding: "7px 12px", borderRadius: 8,
     display: "inline-flex", alignItems: "center",
-    gap: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
+    gap: 5, fontSize: 12, fontWeight: 600, cursor: "pointer",
   },
 };

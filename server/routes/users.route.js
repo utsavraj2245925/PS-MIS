@@ -1,34 +1,50 @@
 import express from "express";
 
 import {
-  createUser,
-  getUsers,
-  getSingleUser,
-  updateUser,
-  deleteUser,
-  getUsersByPlant,
-  getUsersByRole,
+    createUser,
+    getUsers,
+    getUserById,
+    updateUser,
+    deleteUser,
+    toggleUserStatus,
 } from "../controllers/users.controller.js";
+
+import { isAuthenticated } from "../Auth/isAuthenticated.js";
 
 const router = express.Router();
 
-// CREATE USER
+// Protect every user route — the controller relies on req.user (set by
+// isAuthenticated from the JWT payload) for createdBy / updatedBy.
+router.use(isAuthenticated);
+
+/* ==========================================================
+   CREATE
+========================================================== */
 router.post("/", createUser);
 
-// GET ALL USERS
+/* ==========================================================
+   GET ALL (supports ?name=&email=&role=&locationId=&plantId=&shiftId=&status=)
+========================================================== */
 router.get("/", getUsers);
 
-// EXTRA FILTERS
-router.get("/plant/:plantId", getUsersByPlant);
-router.get("/role/:role", getUsersByRole);
+/* ==========================================================
+   GET SINGLE
+========================================================== */
+router.get("/:id", getUserById);
 
-// GET SINGLE USER
-router.get("/:id", getSingleUser);
-
-// UPDATE USER
+/* ==========================================================
+   UPDATE
+========================================================== */
 router.put("/:id", updateUser);
 
-// DELETE USER
+/* ==========================================================
+   TOGGLE STATUS (Active / Inactive)
+========================================================== */
+router.patch("/:id/status", toggleUserStatus);
+
+/* ==========================================================
+   DELETE (hard delete)
+========================================================== */
 router.delete("/:id", deleteUser);
 
 export default router;

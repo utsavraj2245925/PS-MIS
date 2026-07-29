@@ -1,311 +1,415 @@
 import bcrypt from "bcryptjs";
 
 import User from "../models/users.model.js";
-import Plant from "../models/plants.model.js";
+import Location from "../models/location.model.js"; // ⚠ VERIFY: guessed to match your plural naming convention
+import Plant from "../models/plants.model.js"; // confirmed — matches your conveyorStrength.service.js
+import Shift from "../models/shift.model.js"; // confirmed — matches your conveyorStrength.service.js
 
-// ==============================================
-// CREATE USER
-// ==============================================
+/* ================================================================
+   ⚠ ASSUMPTIONS — VERIFY AGAINST YOUR ACTUAL PROJECT
+   ----------------------------------------------------------------
+   1. Model import paths: your User/Plant/Shift files follow a
+      "users.model.js" / "plants.model.js" / "shift.model.js"
+      naming convention (confirmed from files you've shared). The
+      Location file path is guessed as "locations.model.js" to
+      match that same plural pattern — rename the import above if
+      yours is actually "location.model.js".
+   2. Plant  -> { _id, plantName, locationId, conveyors: [{ _id, conveyorName, status }] }
+   3. Shift  -> { _id, shiftName, plantId }
+   4. Location -> { _id, locationName, status }
+   5. req.user is populated by isAuthenticated, which sets
+      req.user = decoded (the raw JWT payload, not a Mongoose doc).
+      createdBy/updatedBy read req.user?._id, falling back to
+      req.user?.id in case your token was signed with "id" instead
+      of "_id" — verify which key your login route signs into the
+      JWT and drop the one that doesn't apply.
+================================================================ */
 
+const SALT_ROUNDS = 10;
+const PLANT_CONVEYOR_KEY = "conveyors";
+
+/* ================================================================
+   RESPONSE HELPERS
+   ----------------------------------------------------------------
+   Success -> { success: true, message, data }
+   Failure -> { success: false, message }   (no "data" key)
+================================================================ */
+const sendSuccess = (res, statusCode, message, data) => {
+    return res.status(statusCode).json({
+        success: true,
+        message,
+        data,
+    });
+};
+
+const sendError = (res, statusCode, message) => {
+    return res.status(statusCode).json({
+        success: false,
+        message,
+    });
+};
+
+/* ================================================================
+   HELPER: validate the full Location → Plant → Shift → Conveyor
+   chain and return the snapshot fields to store on the User.
+
+   Throws { statusCode, message } on any failure.
+================================================================ */
+const validateHierarchyAndBuildSnapshot = async ({ locationId, plantId, shiftId, conveyorId }) => {
+
+    /* ---------- LOCATION ---------- */
+    const location = await Location.findById(locationId);
+    if (!location) {
+        throw { statusCode: 404, message: "Selected Location does not exist." };
+    }
+
+    /* ---------- PLANT (must belong to Location) ---------- */
+    const plant = await Plant.findById(plantId);
+    if (!plant) {
+        throw { statusCode: 404, message: "Selected Plant does not exist." };
+    }
+
+    if (plant.locationId?.toString() !== location._id.toString()) {
+        throw { statusCode: 400, message: "Selected Plant does not belong to the selected Location." };
+    }
+
+    /* ---------- SHIFT (must belong to Plant) ---------- */
+    const shift = await Shift.findById(shiftId);
+    if (!shift) {
+        throw { statusCode: 404, message: "Selected Shift does not exist." };
+    }
+
+    if (shift.plantId?.toString() !== plant._id.toString()) {
+        throw { statusCode: 400, message: "Selected Shift does not belong to the selected Plant." };
+    }
+
+    /* ---------- CONVEYOR (embedded inside Plant) ---------- */
+    const conveyorList = plant[PLANT_CONVEYOR_KEY] || [];
+    const conveyor = conveyorList.id
+        ? conveyorList.id(conveyorId)
+        : conveyorList.find((c) => c._id.toString() === conveyorId?.toString());
+
+    if (!conveyor) {
+        throw { statusCode: 404, message: "Selected Conveyor does not exist inside the selected Plant." };
+    }
+
+    return {
+        locationId: location._id,
+        locationName: location.locationName,
+        plantId: plant._id,
+        plantName: plant.plantName,
+        shiftId: shift._id,
+        shiftName: shift.shiftName,
+        conveyorId: conveyor._id,
+        conveyorName: conveyor.conveyorName,
+    };
+};
+
+/* ================================================================
+   CREATE USER
+   POST /api/users
+================================================================ */
 export const createUser = async (req, res) => {
-  try {
-    const {name,email,password,role,location,plantId,status } = req.body;
-    // ==========================================
-    // VALIDATION
-    // ==========================================
+    try {
+        const {
+            name,
+            email,
+            password,
+            role,
+            locationId,
+            plantId,
+            shiftId,
+            conveyorId,
+            status,
+        } = req.body;
 
-    if (
-      !name ||
-      !email ||
-      !password ||
-      !role) {
-      return res.status(400).json({
-        success: false,
-        message: "Name, Email, Employee ID, Password & Role are required" });
-    }
-
-    // ==========================================
-    // CHECK EMAIL
-    // ==========================================
-
-    const existingEmail = await User.findOne({email});
-
-    if (existingEmail) {
-      return res.status(400).json({
-        success: false,
-        message: "Email already exists",
-      });
-    }
-
-    // ==========================================
-    // VALIDATE PLANT
-    // ==========================================
-
-    let plantData = null;
-    if (plantId) {
-      plantData = await Plant.findById(
-        plantId
-      );
-      if (!plantData) {
-        return res.status(404).json({
-          success: false,
-          message: "Plant not found",
-        });
-      }
-    }
-
-    // ==========================================
-    // HASH PASSWORD
-    // ==========================================
-    const hashedPassword =
-      await bcrypt.hash(password, 10);
-
-    // ==========================================
-    // CREATE USER
-    // ==========================================
-    const user = await User.create({
-      name,
-      email,
-      password: hashedPassword,
-      role,
-      location,
-      plantId: plantData?._id || null,
-      plant: plantData?.plantName || "",
-
-      status: status || "Active",
-    });
-    // ==========================================
-    // RESPONSE
-    // ==========================================
-
-    return res.status(201).json({
-      success: true,
-      message:
-        "User created successfully",
-      user,
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// ==============================================
-// GET ALL USERS
-// ==============================================
-
-export const getUsers = async ( req, res) => {
-  try {
-    const users = await User.find()
-      .populate("plantId", "plantName plantCode location")
-      .sort({createdAt: -1})
-      .select("-password")
-      .lean();
-
-    return res.status(200).json({
-      success: true,
-      count: users.length,
-      users,
-    });
-  } catch (error) {
-    console.log(error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// ==============================================
-// GET SINGLE USER
-// ==============================================
-export const getSingleUser = async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id)
-
-      .populate("plantId", "plantName plantCode location")
-      .select("-password");
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-    return res.status(200).json({
-      success: true,
-      user,
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// ==============================================
-// UPDATE USER
-// ==============================================
-
-export const updateUser = async (req, res) => {
-  try {
-    const existingUser = await User.findById(req.params.id );
-    if (!existingUser) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    const updateData = { ...req.body };
-
-    // ==========================================
-    // UPDATE PASSWORD
-    // ==========================================
-
-    if (req.body.password) { updateData.password = await bcrypt.hash( req.body.password, 10);
-    }
-
-    // ==========================================
-    // UPDATE PLANT DETAILS
-    // ==========================================
-
-    if (req.body.plantId) {
-      const plant = await Plant.findById( req.body.plantId );
-
-      if (!plant) {
-        return res.status(404).json({
-          success: false,
-          message: "Plant not found" });
-      }
-
-      updateData.plant = plant.plantName;
-    }
-
-    // ==========================================
-    // UPDATE USER
-    // ==========================================
-
-    const updatedUser =
-      await User.findByIdAndUpdate( req.params.id,updateData,
-        {
-          new: true,
-          runValidators: true,
+        /* ---------- Required-field validation ---------- */
+        if (!name || !name.trim()) {
+            return sendError(res, 400, "Name is required.");
         }
-      )
-        .populate("plantId", "plantName plantCode location")
-        .select("-password");
+        if (!email || !email.trim()) {
+            return sendError(res, 400, "Email is required.");
+        }
+        if (!password) {
+            return sendError(res, 400, "Password is required.");
+        }
+        if (!role) {
+            return sendError(res, 400, "Role is required.");
+        }
+        if (!locationId) {
+            return sendError(res, 400, "Location is required.");
+        }
+        if (!plantId) {
+            return sendError(res, 400, "Plant is required.");
+        }
+        if (!shiftId) {
+            return sendError(res, 400, "Shift is required.");
+        }
+        if (!conveyorId) {
+            return sendError(res, 400, "Conveyor is required.");
+        }
+        if (!status) {
+            return sendError(res, 400, "Status is required.");
+        }
 
-    return res.status(200).json({
-      success: true,
-      message: "User updated successfully",
-      user: updatedUser,
-    });
-  } catch (error) {
-    console.log(error);
+        /* ---------- Email uniqueness ---------- */
+        const normalizedEmail = email.toLowerCase().trim();
+        const existingUser = await User.findOne({ email: normalizedEmail });
+        if (existingUser) {
+            return sendError(res, 409, "A user with this email already exists.");
+        }
 
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
+        /* ---------- Hierarchy validation (Location -> Plant -> Shift -> Conveyor) ---------- */
+        let snapshot;
+        try {
+            snapshot = await validateHierarchyAndBuildSnapshot({ locationId, plantId, shiftId, conveyorId });
+        } catch (err) {
+            return sendError(res, err.statusCode || 400, err.message || "Invalid hierarchy selection.");
+        }
+
+        /* ---------- Password hashing ---------- */
+        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+        /* ---------- Create ---------- */
+        const newUser = await User.create({
+            name: name.trim(),
+            email: normalizedEmail,
+            password: hashedPassword,
+            role,
+            status,
+            ...snapshot,
+            createdBy: req.user?._id || req.user?.id || null,
+            updatedBy: req.user?._id || req.user?.id || null,
+        });
+
+        const userToReturn = newUser.toObject();
+        delete userToReturn.password;
+
+        return sendSuccess(res, 201, "User created successfully.", userToReturn);
+    } catch (error) {
+        console.error("createUser error:", error);
+        return sendError(res, 500, "Failed to create user.");
+    }
 };
 
-// ==============================================
-// DELETE USER
-// ==============================================
+/* ================================================================
+   GET ALL USERS (with search / filter support)
+   GET /api/users
+   Query params: name, email, role, locationId, plantId, shiftId, status
+================================================================ */
+export const getUsers = async (req, res) => {
+    try {
+        const { name, email, role, locationId, plantId, shiftId, status } = req.query;
 
-export const deleteUser = async ( req, res) => {
-  try {
-    const user = await User.findById(
-      req.params.id
-    );
+        const filter = {};
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+        if (name) {
+            filter.name = { $regex: name.trim(), $options: "i" };
+        }
+        if (email) {
+            filter.email = { $regex: email.trim(), $options: "i" };
+        }
+        if (role) {
+            filter.role = role;
+        }
+        if (locationId) {
+            filter.locationId = locationId;
+        }
+        if (plantId) {
+            filter.plantId = plantId;
+        }
+        if (shiftId) {
+            filter.shiftId = shiftId;
+        }
+        if (status) {
+            filter.status = status;
+        }
+
+        const users = await User.find(filter)
+            .select("-password")
+            .populate("locationId", "locationName")
+            .populate("plantId", "plantName")
+            .populate("shiftId", "shiftName")
+            .sort({ createdAt: -1 });
+
+        return sendSuccess(res, 200, "Users fetched successfully.", users);
+    } catch (error) {
+        console.error("getUsers error:", error);
+        return sendError(res, 500, "Failed to fetch users.");
     }
-
-    await User.findByIdAndDelete(
-      req.params.id
-    );
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "User deleted successfully",
-    });
-  } catch (error) {
-    console.log(error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
 };
 
-// ==============================================
-// GET USERS BY PLANT
-// ==============================================
-
-export const getUsersByPlant =
-  async (req, res) => {
+/* ================================================================
+   GET USER BY ID
+   GET /api/users/:id
+================================================================ */
+export const getUserById = async (req, res) => {
     try {
-      const users = await User.find({
-        plantId: req.params.plantId,
-      })
+        const { id } = req.params;
 
-        .select("-password")
-        .sort({ createdAt: -1 });
+        const user = await User.findById(id)
+            .select("-password")
+            .populate("locationId", "locationName")
+            .populate("plantId", "plantName")
+            .populate("shiftId", "shiftName");
 
-      return res.status(200).json({
-        success: true,
-        count: users.length,
-        users,
-      });
+        if (!user) {
+            return sendError(res, 404, "User not found.");
+        }
+
+        return sendSuccess(res, 200, "User fetched successfully.", user);
     } catch (error) {
-      console.log(error);
-
-      return res.status(500).json({
-        success: false,
-        message: error.message,
-      });
+        console.error("getUserById error:", error);
+        return sendError(res, 500, "Failed to fetch user.");
     }
-  };
+};
 
-// ==============================================
-// GET USERS BY ROLE
-// ==============================================
-
-export const getUsersByRole =
-  async (req, res) => {
+/* ================================================================
+   UPDATE USER
+   PUT /api/users/:id
+================================================================ */
+export const updateUser = async (req, res) => {
     try {
-      const users = await User.find({
-        role: req.params.role,
-      })
-        .select("-password")
-        .sort({ createdAt: -1 });
+        const { id } = req.params;
+        const {
+            name,
+            email,
+            password,
+            role,
+            locationId,
+            plantId,
+            shiftId,
+            conveyorId,
+            status,
+        } = req.body;
 
-      return res.status(200).json({
-        success: true,
-        count: users.length,
-        users,
-      });
+        const existingUser = await User.findById(id);
+        if (!existingUser) {
+            return sendError(res, 404, "User not found.");
+        }
+
+        /* ---------- Required-field validation ---------- */
+        if (!name || !name.trim()) {
+            return sendError(res, 400, "Name is required.");
+        }
+        if (!email || !email.trim()) {
+            return sendError(res, 400, "Email is required.");
+        }
+        if (!role) {
+            return sendError(res, 400, "Role is required.");
+        }
+        if (!locationId) {
+            return sendError(res, 400, "Location is required.");
+        }
+        if (!plantId) {
+            return sendError(res, 400, "Plant is required.");
+        }
+        if (!shiftId) {
+            return sendError(res, 400, "Shift is required.");
+        }
+        if (!conveyorId) {
+            return sendError(res, 400, "Conveyor is required.");
+        }
+        if (!status) {
+            return sendError(res, 400, "Status is required.");
+        }
+
+        /* ---------- Email uniqueness (excluding self) ---------- */
+        const normalizedEmail = email.toLowerCase().trim();
+        if (normalizedEmail !== existingUser.email) {
+            const emailTaken = await User.findOne({ email: normalizedEmail, _id: { $ne: id } });
+            if (emailTaken) {
+                return sendError(res, 409, "A user with this email already exists.");
+            }
+        }
+
+        /* ---------- Hierarchy validation — always re-validated, never trusted from frontend ---------- */
+        let snapshot;
+        try {
+            snapshot = await validateHierarchyAndBuildSnapshot({ locationId, plantId, shiftId, conveyorId });
+        } catch (err) {
+            return sendError(res, err.statusCode || 400, err.message || "Invalid hierarchy selection.");
+        }
+
+        /* ---------- Build update payload ---------- */
+        const updateFields = {
+            name: name.trim(),
+            email: normalizedEmail,
+            role,
+            status,
+            ...snapshot,
+            updatedBy: req.user?._id || req.user?.id || null,
+        };
+
+        if (password) {
+            updateFields.password = await bcrypt.hash(password, SALT_ROUNDS);
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(id, updateFields, {
+            new: true,
+            runValidators: true,
+        })
+            .select("-password")
+            .populate("locationId", "locationName")
+            .populate("plantId", "plantName")
+            .populate("shiftId", "shiftName");
+
+        return sendSuccess(res, 200, "User updated successfully.", updatedUser);
     } catch (error) {
-      console.log(error);
-
-      return res.status(500).json({
-        success: false,
-        message: error.message,
-      });
+        console.error("updateUser error:", error);
+        return sendError(res, 500, "Failed to update user.");
     }
-  };
+};
+
+/* ================================================================
+   DELETE USER (hard delete)
+   DELETE /api/users/:id
+================================================================ */
+export const deleteUser = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const deletedUser = await User.findByIdAndDelete(id);
+        if (!deletedUser) {
+            return sendError(res, 404, "User not found.");
+        }
+
+        return sendSuccess(res, 200, "User deleted permanently.", null);
+    } catch (error) {
+        console.error("deleteUser error:", error);
+        return sendError(res, 500, "Failed to delete user.");
+    }
+};
+
+/* ================================================================
+   TOGGLE USER STATUS (Active / Inactive)
+   PATCH /api/users/:id/status
+   Body: { status: "Active" | "Inactive" }
+================================================================ */
+export const toggleUserStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!status || !["Active", "Inactive"].includes(status)) {
+            return sendError(res, 400, "Status must be either 'Active' or 'Inactive'.");
+        }
+
+        const user = await User.findById(id);
+        if (!user) {
+            return sendError(res, 404, "User not found.");
+        }
+
+        user.status = status;
+        user.updatedBy = req.user?._id || req.user?.id || null;
+        await user.save();
+
+        const userToReturn = user.toObject();
+        delete userToReturn.password;
+
+        return sendSuccess(res, 200, `User status updated to ${status}.`, userToReturn);
+    } catch (error) {
+        console.error("toggleUserStatus error:", error);
+        return sendError(res, 500, "Failed to update user status.");
+    }
+};

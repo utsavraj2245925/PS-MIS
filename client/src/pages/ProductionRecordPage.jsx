@@ -163,20 +163,25 @@ function RecordDetailModal({ record, open, onClose, plantTotalTarget = 0 }) {
       ),
       children: (
         <div className="overflow-x-auto rounded-xl border border-slate-200">
-          <table className="w-full min-w-[500px]">
+          <table className="w-full min-w-[560px]">
             <thead>
               <tr>
-                {["#", "Model", "Part", "Production Qty", "Target (Demand)", "Achievement %"].map(h => (
+                {["#", "Line", "Model", "Part", "Production Qty", "Target", "Achievement %"].map(h => (
                   <th key={h} className={TH}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {(record.productions || []).length === 0 ? (
-                <tr><td colSpan={6} className="py-10 text-center text-slate-400">No production entries</td></tr>
+                <tr><td colSpan={7} className="py-10 text-center text-slate-400">No production entries</td></tr>
               ) : (record.productions || []).map((e, i) => (
                 <tr key={i} className="hover:bg-slate-50/60">
                   <td className={`${TD} text-slate-400 w-10`}>{i + 1}</td>
+                  <td className={TD}>
+                    {name(e.conveyorId, ["conveyorName"]) !== "—"
+                      ? <Tag color="blue" className="!rounded-lg !font-semibold">{name(e.conveyorId, ["conveyorName"])}</Tag>
+                      : <span className="text-slate-300 text-xs">—</span>}
+                  </td>
                   <td className={TD}>
                     <Tag color="cyan" className="!rounded-lg !font-semibold">
                       {name(e.modelId, ["modelName", "name"])}
@@ -500,7 +505,6 @@ export default function ProductionRecordsPage() {
   const [now, setNow]                   = useState(dayjs());
   const [plantStrengths, setPlantStrengths] = useState([]);
 
-  console.log("selected date range:", dateRange[0]?.format("YYYY-MM-DD"), "to", dateRange[1]?.format("YYYY-MM-DD"));
 
   /* live clock */
   useEffect(() => {
@@ -614,6 +618,17 @@ export default function ProductionRecordsPage() {
       return target > 0 ? parseFloat(((achieved / target) * 100).toFixed(2)) : 0;
     };
 
+  // Which conveyor line(s) contributed production rows to this record —
+  // reads productions[].conveyorId (populated with conveyorName by the backend).
+  const getRecordLines = (r) => {
+    const names = new Set();
+    (r.productions || []).forEach((p) => {
+      const line = p.conveyorId;
+      if (line && typeof line === "object" && line.conveyorName) names.add(line.conveyorName);
+    });
+    return [...names];
+  };
+
   /* ── KPIs ── */
 
 const kpis = useMemo(() => {
@@ -659,6 +674,7 @@ const kpis = useMemo(() => {
         "Reported By":         r.employeeName,
         "Plant":               r.plantName,
         "Location":            r.location,
+        "Line(s)":             getRecordLines(r).join(", ") || "—",
         "Target":              r.shiftSummary?.target      ?? 0,
         "Achieved":            r.shiftSummary?.achieved     ?? r.totalProductionQty ?? 0,
         "Achievement %":       r.shiftSummary?.achievement  ?? 0,
@@ -681,9 +697,9 @@ const kpis = useMemo(() => {
       // proper column widths — clean alignment, kuch bhi cramped nahi lagega
       ws["!cols"] = [
         { wch: 6 },  { wch: 12 }, { wch: 8 },  { wch: 8 },  { wch: 20 },
-        { wch: 16 }, { wch: 16 }, { wch: 9 },  { wch: 10 }, { wch: 14 },
-        { wch: 14 }, { wch: 11 }, { wch: 11 }, { wch: 13 }, { wch: 15 },
-        { wch: 17 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 11 },
+        { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 9 },  { wch: 10 },
+        { wch: 14 }, { wch: 14 }, { wch: 11 }, { wch: 11 }, { wch: 13 },
+        { wch: 15 }, { wch: 17 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 11 },
       ];
 
       XLSX.utils.book_append_sheet(wb, ws, "Production Records");
@@ -701,82 +717,92 @@ const kpis = useMemo(() => {
   /* ── table columns ── */
   const columns = [
     {
-      title: "S.N.", key: "sn", width: 52, fixed: "left",
-      render: (_, __, i) => <span className="text-slate-400 text-xs">{i + 1}</span>,
+      title: "S.N.", key: "sn", width: 38, fixed: "left",
+      render: (_, __, i) => <span className="text-slate-400 text-[11px]">{i + 1}</span>,
     },
-    
-      {
-      title: "Date & Time", key: "date", width: 120, fixed: "left",
+    {
+      title: "Date & Time", key: "date", width: 96, fixed: "left",
       sorter: (a, b) =>
         dayjs(a.entryDate || a.createdAt).unix() - dayjs(b.entryDate || b.createdAt).unix(),
       defaultSortOrder: "descend",
       render: (_, r) => (
         <div>
-          <div className="text-sm font-bold text-slate-800">
+          <div className="text-xs font-bold text-slate-800">
             {dayjs(r.entryDate || r.createdAt).format("DD MMM YYYY")}
           </div>
-          <div className="text-[11px] text-slate-400">
+          <div className="text-[10px] text-slate-400">
             {r.reportTime ? dayjs(r.reportTime).format("HH:mm") : dayjs(r.createdAt).format("HH:mm")}
           </div>
         </div>
       ),
     },
     {
-      title: "Shift", key: "shift", width: 88,
+      title: "Shift", key: "shift", width: 72,
       render: (_, r) => (
         <div
-          className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full"
+          className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full"
           style={
             r.shift === "Day"
               ? { background: "#fefce8", border: "1px solid #fde68a", color: "#92400e" }
               : { background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af" }
           }
         >
-          {r.shift === "Day" ? <Sun size={10} /> : <Moon size={10} />}
+          {r.shift === "Day" ? <Sun size={9} /> : <Moon size={9} />}
           {r.shift}
         </div>
       ),
     },
     {
-      title: "Reported By", key: "by", width: 140,
+      title: "Reported By", key: "by", width: 112,
       render: (_, r) => (
         <div>
-          <div className="text-sm font-semibold text-slate-800">{r.employeeName || "—"}</div>
-          <div className="text-[11px] text-slate-400">{r.plantName || "—"}</div>
+          <div className="text-xs font-semibold text-slate-800">{r.employeeName || "—"}</div>
+          <div className="text-[10px] text-slate-400">{r.plantName || "—"}</div>
         </div>
       ),
     },
     {
-      title: "Total Target", key: "target", width: 100, align: "center",
-      render: (_, r) => <span className="text-sm font-bold text-teal-700">{getRecordTarget(r)}</span>,
-    
+      title: "Line", key: "line", width: 100, align: "center",
+      render: (_, r) => {
+        const lines = getRecordLines(r);
+        if (lines.length === 0) return <span className="text-slate-300 text-[10px]">—</span>;
+        return (
+          <div className="flex flex-wrap gap-1 justify-center">
+            {lines.map((l) => (
+              <Tag key={l} color="blue" className="!rounded-md !text-[10px] !font-semibold !m-0 !px-1.5 !py-0 !leading-4">
+                {l}
+              </Tag>
+            ))}
+          </div>
+        );
+      },
     },
     {
-      title: "Total Target", key: "target", width: 88, align: "center",
+      title: "Total Target", key: "target", width: 80, align: "center",
       render: (_, r) => <span className="text-xs font-bold text-teal-700">{getRecordTarget(r)}</span>,
     },
     {
-      title: "Production", key: "prod", width: 95, align: "center",
+      title: "Production", key: "prod", width: 78, align: "center",
       sorter: (a, b) => (a.totalProductionQty ?? 0) - (b.totalProductionQty ?? 0),
       render: (_, r) => (
-        <span className="text-sm font-black text-blue-700">{r.totalProductionQty ?? 0}</span>
+        <span className="text-xs font-black text-blue-700">{r.totalProductionQty ?? 0}</span>
       ),
     },
     {
-      title: "Achievement %", key: "ach", width: 100, align: "center",
+      title: "Achievement %", key: "ach", width: 85, align: "center",
       sorter: (a, b) => getRecordAchievement(a) - getRecordAchievement(b),
       render: (_, r) => {
         const v = getRecordAchievement(r);
         const color = v >= 90 ? "text-green-600" : v >= 70 ? "text-amber-600" : "text-red-500";
         return (
-          <span className={`text-sm font-black ${color}`}>
+          <span className={`text-xs font-black ${color}`}>
             {v}<span className="text-[9px] font-normal text-slate-400">%</span>
           </span>
         );
       },
     },
     {
-      title: "Reject", key: "rej", width: 65, align: "center",
+      title: "Reject", key: "rej", width: 55, align: "center",
       render: (_, r) => (
         <span className={`text-xs font-bold ${(r.totalRejectQty ?? 0) > 0 ? "text-red-600" : "text-slate-200"}`}>
           {r.totalRejectQty ?? 0}
@@ -784,7 +810,7 @@ const kpis = useMemo(() => {
       ),
     },
     {
-      title: "Rework", key: "rew", width: 65, align: "center",
+      title: "Rework", key: "rew", width: 55, align: "center",
       render: (_, r) => (
         <span className={`text-xs font-bold ${(r.totalReworkQty ?? 0) > 0 ? "text-amber-500" : "text-slate-200"}`}>
           {r.totalReworkQty ?? 0}
@@ -792,45 +818,45 @@ const kpis = useMemo(() => {
       ),
     },
     {
-      title: "Defects", key: "def", width: 80, align: "center",
+      title: "Defects", key: "def", width: 65, align: "center",
       render: (_, r) => {
         const v = (r.totalRejectQty ?? 0) + (r.totalReworkQty ?? 0);
         return v > 0
-          ? <Tag color="volcano" className="!rounded-full !font-bold !text-xs">{v}</Tag>
-          : <span className="text-slate-200 text-base">0</span>;
+          ? <Tag color="volcano" className="!rounded-full !font-bold !text-[10px] !m-0">{v}</Tag>
+          : <span className="text-slate-200 text-xs">0</span>;
       },
     },
     {
-      title: "Planned DT", key: "pdt", width: 85, align: "center",
+      title: "Planned DT", key: "pdt", width: 70, align: "center",
       render: (_, r) => (
-        <span className={`text-xs font-semibold ${(r.totalPlannedDowntime ?? 0) > 0 ? "text-blue-600" : "text-slate-200"}`}>
+        <span className={`text-[11px] font-semibold ${(r.totalPlannedDowntime ?? 0) > 0 ? "text-blue-600" : "text-slate-200"}`}>
           {r.totalPlannedDowntime ?? 0}
           <span className="text-[9px] font-normal ml-0.5 text-slate-400">min</span>
         </span>
       ),
     },
     {
-      title: "Unplanned DT", key: "udt", width: 92, align: "center",
+      title: "Unplanned DT", key: "udt", width: 78, align: "center",
       render: (_, r) => (
-        <span className={`text-xs font-semibold ${(r.totalUnplannedDowntime ?? 0) > 0 ? "text-red-500" : "text-slate-200"}`}>
+        <span className={`text-[11px] font-semibold ${(r.totalUnplannedDowntime ?? 0) > 0 ? "text-red-500" : "text-slate-200"}`}>
           {r.totalUnplannedDowntime ?? 0}
           <span className="text-[9px] font-normal ml-0.5 text-slate-400">min</span>
         </span>
       ),
     },
     {
-      title: "Total DT", key: "tdt", width: 78, align: "center",
+      title: "Total DT", key: "tdt", width: 65, align: "center",
       render: (_, r) => (
-        <span className={`text-xs font-bold ${(r.totalDowntime ?? 0) > 0 ? "text-purple-600" : "text-slate-200"}`}>
+        <span className={`text-[11px] font-bold ${(r.totalDowntime ?? 0) > 0 ? "text-purple-600" : "text-slate-200"}`}>
           {r.totalDowntime ?? 0}
           <span className="text-[9px] font-normal ml-0.5 text-slate-400">min</span>
         </span>
       ),
     },
     {
-      title: "MP Req / Avail", key: "mp", width: 110, align: "center",
+      title: "MP Req / Avail", key: "mp", width: 95, align: "center",
       render: (_, r) => (
-        <div className="text-xs text-center leading-tight">
+        <div className="text-[11px] text-center leading-tight">
           <span className="font-bold text-slate-700">{r.requiredManpower ?? 0}</span>
           <span className="text-slate-300 mx-1">/</span>
           <span className="font-bold text-green-600">{r.availableManpower ?? 0}</span>
@@ -838,34 +864,34 @@ const kpis = useMemo(() => {
       ),
     },
     {
-      title: "Short MP", key: "smp", width: 85, align: "center",
+      title: "Short MP", key: "smp", width: 70, align: "center",
       render: (_, r) => {
         const v = r.shortageManpower ?? 0;
         return (
-          <span className={`text-sm font-bold ${v > 0 ? "text-red-500" : "text-green-500"}`}>
+          <span className={`text-xs font-bold ${v > 0 ? "text-red-500" : "text-green-500"}`}>
             {v}
           </span>
         );
       },
     },
     {
-      title: "Status", key: "st", width: 100, align: "center",
+      title: "Status", key: "st", width: 85, align: "center",
       render: (_, r) => (
         <Tag
           color={r.status === "Submitted" ? "success" : "warning"}
-          className="!rounded-full !text-[11px] !font-bold !px-3"
+          className="!rounded-full !text-[10px] !font-bold !px-2 !m-0"
         >
           {r.status}
         </Tag>
       ),
     },
     {
-      title: "", key: "act", width: 52, fixed: "right", align: "center",
+      title: "", key: "act", width: 44, fixed: "right", align: "center",
       render: (_, r) => (
         <Tooltip title="View full details">
           <Button
             type="text" size="small"
-            icon={<Eye size={15} className="text-teal-600" />}
+            icon={<Eye size={14} className="text-teal-600" />}
             className="!rounded-lg hover:!bg-teal-50"
             onClick={e => { e.stopPropagation(); handleRowClick(r); }}
           />
@@ -984,7 +1010,7 @@ const kpis = useMemo(() => {
               </Button>
             </Tooltip>
 
-            <Tooltip title="Export to Excel (multi-sheet)">
+            <Tooltip title="Export to Excel">
               <Button
                 size="small"
                 icon={<Download size={13} />}
@@ -1043,7 +1069,8 @@ const kpis = useMemo(() => {
       ══════════════════════════════════════════════ */}
       <div className="px-5 py-5 max-w-[1700px] mx-auto space-y-4">
 
-        {/* ── KPI CARDS — sticky just below the navbar ── */}
+        {/* ── KPI CARDS — sticky just below the navbar. Always the combined total
+             across every line (Line 1 + Line 2 + ...); never split per-line here. ── */}
         <div
           className="sticky z-40 -mx-5 px-5 py-3 bg-[#f1f5f9]/95 backdrop-blur-sm"
           style={{ top: 60 }}
@@ -1160,7 +1187,7 @@ const kpis = useMemo(() => {
             loading={{ spinning: loading, description: "Loading records..." }}
             dataSource={combinedWithTarget}
             columns={columns}
-            scroll={{ x: 1400 }}
+            scroll={{ x: 1150 }}
             size="small"
             pagination={{
               pageSize: 20,

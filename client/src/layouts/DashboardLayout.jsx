@@ -1,55 +1,26 @@
+// DashboardLayout.jsx
 import { useState } from "react";
-
 import Navbar from "../components/Navbar";
 import Sidebar from "../components/Sidebar";
 
-export default function DashboardLayout({
-children,
-}) {
-const [collapsed, setCollapsed] =
-useState(false);
+export default function DashboardLayout({ children }) {
+  const [collapsed, setCollapsed] = useState(false);
 
-// TEMP ROLE
-// Later this will come from login user data
+  return (
+    <div className="min-h-screen bg-slate-100">
+      <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
 
-return ( <div className="min-h-screen bg-slate-100">
+      <div
+        className={`transition-all duration-300 ${
+          collapsed ? "ml-[51px]" : "ml-[162px]"
+        }`}
+      >
+        <Navbar collapsed={collapsed} />
 
-
-  {/* SIDEBAR */}
-
-  <Sidebar
-    collapsed={collapsed}
-    setCollapsed={setCollapsed}
-  />
-
-  {/* MAIN CONTENT */}
-
-  <div
-    className={`transition-all duration-300 ${
-      collapsed
-        ? "ml-[60px]"
-        : "ml-[190px]"
-    }`}
-  >
-
-    {/* NAVBAR */}
-
-    <Navbar collapsed={collapsed} />
-
-    {/* PAGE CONTENT */}
-
-    <main className="pt-[70px] px-4 pb-4 lg:px-6">
-
-      <div className="w-full overflow-x-auto">
-        {children}
+        <main className="pt-[60px] px-[14px] pb-[14px] lg:px-[20px]">
+          <div className="w-full overflow-x-auto">{children}</div>
+        </main>
       </div>
-
-    </main>
-
-  </div>
-
-</div>
-
-
-);
+    </div>
+  );
 }

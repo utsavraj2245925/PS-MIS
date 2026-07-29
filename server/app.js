@@ -18,7 +18,9 @@ import productionEntryRoutes from "./routes/production.route.js";
 import defectsRoutes from "./routes/defects.route.js";
 import downtimeRoutes from "./routes/downtime.route.js";
 import materialRoutes from "./routes/material.route.js";
-
+import shiftRoutes from "./routes/shift.route.js";
+import conveyorStrengthRoutes from "./routes/conveyorStrength.routes.js";
+import locationRoutes from "./routes/location.routes.js";
 
 // Connect Database
 await connectDB();
@@ -51,12 +53,15 @@ app.use("/api", partRoutes);
 app.use("/api/plants", plantRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/production", productionEntryRoutes);
+app.use("/api/conveyor-strength", conveyorStrengthRoutes);
+app.use("/api/locations", locationRoutes);
 
 // Master Routes
 
 app.use("/api/downtime-types", downtimeRoutes);
 app.use("/api/materials", materialRoutes);
 app.use("/api/defects", defectsRoutes);
+app.use("/api/shifts", shiftRoutes);
 
 // Health Check
 app.get("/", (req, res) => {

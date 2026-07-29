@@ -1,15 +1,21 @@
 import mongoose from "mongoose";
 
 /* ========================= PRODUCTION ROW ========================= */
-/* one row per (model, part) added via "Add Model to List" */
+/* one row per (model, part) added via "Add Model to List" / "Complete & Add to List" */
 
 const productionItemSchema = new mongoose.Schema({
   modelId: { type: mongoose.Schema.Types.ObjectId, ref: "Model", required: true },
   partId: { type: mongoose.Schema.Types.ObjectId, ref: "Part", required: true },
+  conveyorId: { type: mongoose.Schema.Types.ObjectId, ref: "PlantStrength" }, // which physical line this row was produced on
   productionQty: { type: Number, default: 0 },
   demandPerShift:     { type: Number, default: 0 },
-  achievementPercent: { type: Number, default: 0, min: 0 }, // (totalProductionQty / demandPerShift) *100
-          
+  achievementPercent: { type: Number, default: 0, min: 0, max: 100 }, // (productionQty / demandPerShift) *100
+
+  // NEW — per-model job timing (operator Start/Complete on the entry form)
+  startTime: { type: Date },        // when the operator started loading this model/line
+  endTime: { type: Date },          // when this model/line job was completed & saved
+  durationMinutes: { type: Number, default: 0 }, // auto-calculated = endTime - startTime
+
 }, { _id: false });
 
 /* ========================= REJECT ROW ========================= */
@@ -31,6 +37,9 @@ const reworkItemSchema = new mongoose.Schema({
 }, { _id: false });
 
 /* ========================= DOWNTIME ROW ========================= */
+/* unchanged — already supports the auto-captured Stop/Resume + lunch-lock
+   entries the new UI generates (downtimeTypeId is optional, so the
+   auto "Lunch Break" row with no matching master record still saves fine) */
 
 const downtimeSchema = new mongoose.Schema({
   downtimeTypeId: { type: mongoose.Schema.Types.ObjectId, ref: "downtimeTypes" },
@@ -57,27 +66,26 @@ const productionEntrySchema = new mongoose.Schema({
   employeeName: { type: String, trim: true },
   employeeEmail: { type: String, trim: true },
   role: { type: String, trim: true },
-  
+
   // plant info (snapshot at time of entry)
   plantId: { type: mongoose.Schema.Types.ObjectId, ref: "Plant", required: true },
   plantName: { type: String, trim: true },
   location: { type: String, trim: true },
 
   // shift
-  shift: { type: String, 
-    enum: ["Day", "Night"], 
-    required: true 
+  shift: {
+    type: String,
+    enum: ["Day", "Night"],
+    required: true
   },
 
-  
-
-  reportTime: { 
-    type: Date, 
-    default: Date.now 
+  reportTime: {
+    type: Date,
+    default: Date.now
   },
   entryDate: {
     type: Date,
-    default:Date.now,
+    default: Date.now,
     required: true,
   },
 
@@ -97,7 +105,6 @@ const productionEntrySchema = new mongoose.Schema({
   totalPlannedDowntime: { type: Number, default: 0 },
   totalUnplannedDowntime: { type: Number, default: 0 },
   totalDowntime: { type: Number, default: 0 },
-  
 
   // final summary
   totalProductionQty: { type: Number, default: 0 }, // = sum(productions) + sum(reworks)
@@ -105,12 +112,12 @@ const productionEntrySchema = new mongoose.Schema({
   totalReworkQty: { type: Number, default: 0 },
   totalDefectQty: { type: Number, default: 0 }, // = totalRejectQty + totalReworkQty
   finalRemark: { type: String, trim: true, default: "" },
-  status: { type: String, enum: ["Draft", "Submitted","Rejected"], default: "Submitted" },
+  status: { type: String, enum: ["Draft", "Submitted", "Rejected"], default: "Submitted" },
   shiftSummary: {
-  target:      { type: Number, default: 0 },
-  achieved:    { type: Number, default: 0 },
-  achievement: { type: Number, default: 0, min: 0 },
-}
+    target: { type: Number, default: 0 },
+    achieved: { type: Number, default: 0 },
+    achievement: { type: Number, default: 0, min: 0 },
+  }
 }, { timestamps: true });
 
 productionEntrySchema.index(
@@ -123,6 +130,5 @@ productionEntrySchema.index(
     unique: true,
   }
 );
-
 
 export default mongoose.model("ProductionEntry", productionEntrySchema);

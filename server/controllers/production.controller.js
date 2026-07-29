@@ -1,6 +1,6 @@
 import ProductionEntry from "../models/production.model.js";
 import User from "../models/users.model.js";
-import PlantStrength from "../models/plantStrength.model.js";
+import ConveyorStrength from "../models/ConveyorStrength.model.js";
 import Plant from "../models/plants.model.js";
 import model from "../models/models.model.js";
 import part from "../models/parts.model.js";
@@ -9,7 +9,7 @@ import rework from "../models/rework.model.js";
 import downtime from "../models/downTime.model.js";
 import downtimeType from "../models/downtimeTypes.model.js";
 import consumable from "../models/consumable.model.js";
-import shift from "../models/ShiftModel.js";
+import shift from "../models/shift.model.js";
 import defect from "../models/defects.model.js";
 import material from "../models/material.model.js";
 
@@ -29,6 +29,7 @@ const POPULATE = [
   { path: "reworks.reworkTypeId", select: "name" },
   { path: "downtimes.downtimeTypeId", select: "name type" },
   { path: "consumables.materialId", select: "name type measurementType" },
+  { path: "productions.conveyorId", select: "conveyorName" },
 ];
 
 /* ========================= HELPERS ========================= */
@@ -71,11 +72,24 @@ export const createProductionEntry = async (req, res) => {
       if (!row.modelId || !row.partId) return res.status(400).json({ success: false, message: "Model and Part are required in every reject/rework row" });
     }
 
-     // PlantStrength is a plant-level config (conveyor/shift setup), not per model/part.
-    // A plant can have multiple active strength profiles (multiple conveyors/lines),
-    // so the shift target is the sum of demandPerShift across all active profiles.
-    const strengths = await PlantStrength.find({ plantId: plant._id, status: "Active" }).lean();
-    const plantDemandPerShift = strengths.reduce((sum, s) => sum + (s.demandPerShift || 0), 0);
+     // Each production row can now say exactly which line (conveyorId) it was produced
+    // on. That line's own demandPerShift becomes the row's target. Rows without a
+    // conveyorId (legacy free-form entries) fall back to a plantId+modelId+partId match.
+    const enrichedProductions = await Promise.all(
+      productions.map(async (row) => {
+        const strength = row.conveyorId
+          ? await PlantStrength.findById(row.conveyorId).lean()
+          : await PlantStrength.findOne({ plantId: plant._id, modelId: row.modelId, partId: row.partId }).lean();
+        const demand = strength?.demandPerShift ?? 0;
+        return {
+          ...row,
+          demandPerShift: demand,
+          achievementPercent: demand > 0
+            ? parseFloat(((row.productionQty / demand) * 100).toFixed(2))
+            : 0,
+        };
+      })
+    );
 
 
     const formattedDowntimes = downtimes.map((item) => {
@@ -90,16 +104,16 @@ export const createProductionEntry = async (req, res) => {
 
     const totalRejectQty = sumBy(rejects, "quantity");
     const totalReworkQty = sumBy(reworks, "quantity");
-    const totalProductionQty = sumBy(productions, "productionQty") + totalReworkQty; // rework auto-counts into production
+    const totalProductionQty = sumBy(enrichedProductions, "productionQty") + totalReworkQty; // rework auto-counts into production
     const totalDefectQty = totalRejectQty + totalReworkQty;
 
-    // shift-level target vs achieved, using the plant's own demand (not per model/part)
+    // shift-level target vs achieved — sum of the specific lines actually used in this entry
+    const totalTarget = sumBy(enrichedProductions, "demandPerShift");
+    const totalAchieved = sumBy(enrichedProductions, "productionQty");
     const shiftSummary = {
-      target: plantDemandPerShift,
-      achieved: totalProductionQty,
-      achievement: plantDemandPerShift > 0
-        ? parseFloat(((totalProductionQty / plantDemandPerShift) * 100).toFixed(2))
-        : 0,
+      target: totalTarget,
+      achieved: totalAchieved,
+      achievement: totalTarget > 0 ? parseFloat(((totalAchieved / totalTarget) * 100).toFixed(2)) : 0,
     };
 
     const newEntry = await ProductionEntry.create({
@@ -108,7 +122,7 @@ export const createProductionEntry = async (req, res) => {
       plantId: plant._id, plantName: plant.plantName, location: plant.location,
       shift, reportTime: new Date(),
       requiredManpower, availableManpower, shortageManpower: Math.max(requiredManpower - availableManpower, 0),
-      productions, rejects, reworks, downtimes: formattedDowntimes,
+      productions: enrichedProductions, rejects, reworks, downtimes: formattedDowntimes,
       totalPlannedDowntime, totalUnplannedDowntime, totalDowntime: totalPlannedDowntime + totalUnplannedDowntime,
       consumables, totalProductionQty, totalRejectQty, totalReworkQty, totalDefectQty, finalRemark, shiftSummary,
     });
@@ -141,7 +155,11 @@ export const getproductions = async (req, res) => {
     }
 
     const entries = await ProductionEntry.find(filter).populate(POPULATE).sort({ createdAt: -1 });
-    const plantStrengths = plantId ? await PlantStrength.find({ plantId, status: "Active" }) : [];
+    const plantStrengths = plantId
+      ? await PlantStrength.find({ plantId, status: "Active" })
+          .populate("modelId", "modelName")
+          .populate("partId", "partName")
+      : [];
 
     return res.status(200).json({ success: true, message: "Production entries fetched successfully", data: entries, plantStrengths });
   } catch (error) {
