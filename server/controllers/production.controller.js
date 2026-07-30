@@ -11,14 +11,16 @@ import downtimeType from "../models/downtimeTypes.model.js";
 import consumable from "../models/consumable.model.js";
 import shift from "../models/shift.model.js";
 import defect from "../models/defects.model.js";
-import material from "../models/material.model.js";
+import material from "../models/material.model.js"; 
 
 
 /* ========================= POPULATE CONFIG ========================= */
 
 const POPULATE = [
   { path: "reportedBy", select: "name email role" },
-  { path: "plantId", select: "plantName plantCode location" },
+  { path: "productions.locationId", select: "locationName locationCode"},
+  { path: "plantId", select: "plantName plantCode locationName" },
+  { path: "shiftId", select: "shiftName shiftType shiftStartTime shiftEndTime actualWorkingHours"},
   { path: "productions.modelId", select: "modelName" },
   { path: "productions.partId", select: "partName area" },
   { path: "rejects.modelId", select: "modelName" },
@@ -29,7 +31,7 @@ const POPULATE = [
   { path: "reworks.reworkTypeId", select: "name" },
   { path: "downtimes.downtimeTypeId", select: "name type" },
   { path: "consumables.materialId", select: "name type measurementType" },
-  { path: "productions.conveyorId", select: "conveyorName" },
+  { path: "productions.conveyorStrengthId", select: "conveyorName demandPerShift availableTime effectiveHangerPerShift"},
 ];
 
 /* ========================= HELPERS ========================= */
@@ -48,14 +50,14 @@ const wordCount = (text = "") => text.trim().split(/\s+/).filter(Boolean).length
 export const createProductionEntry = async (req, res) => {
   try {
     const {
-      reportedBy, shift, requiredManpower = 0, availableManpower = 0,
+      reportedBy, shiftId, requiredManpower = 0, availableManpower = 0,
       productions = [], rejects = [], reworks = [], downtimes = [], consumables = [],
       finalRemark = "", status = "Submitted",
     } = req.body;
 
 
     if (!reportedBy) return res.status(400).json({ success: false, message: "Reported By user is required" });
-    if (!shift) return res.status(400).json({ success: false, message: "Shift is required" });
+    if (!shiftId) return res.status(400).json({ success: false, message: "Shift is required" });
     if (!productions.length) return res.status(400).json({ success: false, message: "Add at least one model to the production list" });
 
     const user = await User.findById(reportedBy).populate("plantId");
@@ -64,6 +66,30 @@ export const createProductionEntry = async (req, res) => {
     if (!user.plantId) return res.status(404).json({ success: false, message: "User has no plant assigned" });
 
     const plant = user.plantId; // already populated, no need to re-query
+    const selectedShift = await shift.findById(shiftId);
+    const existingEntry =
+      await ProductionEntry.findOne({
+        reportedBy:user._id,
+        shiftId:selectedShift._id,
+        entryDate:new Date(
+          new Date().toISOString().slice(0,10)
+        ),
+      });
+
+      if(existingEntry){
+      return res.status(400).json({
+        success:false,
+        message:
+        "Production entry already submitted for this shift"
+      });
+      }
+
+      if (!selectedShift) {
+        return res.status(404).json({
+          success: false,
+          message: "Shift not found",
+        });
+      }
 
     for (const row of productions) {
       if (!row.modelId || !row.partId) return res.status(400).json({ success: false, message: "Model and Part are required in every production row" });
@@ -77,16 +103,34 @@ export const createProductionEntry = async (req, res) => {
     // conveyorId (legacy free-form entries) fall back to a plantId+modelId+partId match.
     const enrichedProductions = await Promise.all(
       productions.map(async (row) => {
-        const strength = row.conveyorId
-          ? await PlantStrength.findById(row.conveyorId).lean()
-          : await PlantStrength.findOne({ plantId: plant._id, modelId: row.modelId, partId: row.partId }).lean();
-        const demand = strength?.demandPerShift ?? 0;
+
+        const strength = row.conveyorStrengthId
+          ? await ConveyorStrength.findById(
+              row.conveyorStrengthId
+            ).lean()
+          : null;
+
+        const demand =
+          strength?.demandPerShift || 0;
+
         return {
           ...row,
+
+          locationId: plant.locationId,
+
+          locationName: plant.locationName,
+
           demandPerShift: demand,
-          achievementPercent: demand > 0
-            ? parseFloat(((row.productionQty / demand) * 100).toFixed(2))
-            : 0,
+
+          achievementPercent:
+            demand > 0
+              ? Number(
+                  (
+                    (row.productionQty / demand) *
+                    100
+                  ).toFixed(2)
+                )
+              : 0,
         };
       })
     );
@@ -119,8 +163,8 @@ export const createProductionEntry = async (req, res) => {
     const newEntry = await ProductionEntry.create({
       reportedBy: user._id, employeeName: user.name, employeeEmail: user.email, role: user.role,
       entryDate:  new Date(new Date().toISOString().slice(0, 10)),
-      plantId: plant._id, plantName: plant.plantName, location: plant.location,
-      shift, reportTime: new Date(),
+      plantId: plant._id, plantName: plant.plantName, locationName: plant.locationName, locationId: plant.locationId,
+      shiftId: selectedShift._id, shiftName: selectedShift.shiftName, reportTime: new Date(),
       requiredManpower, availableManpower, shortageManpower: Math.max(requiredManpower - availableManpower, 0),
       productions: enrichedProductions, rejects, reworks, downtimes: formattedDowntimes,
       totalPlannedDowntime, totalUnplannedDowntime, totalDowntime: totalPlannedDowntime + totalUnplannedDowntime,
@@ -138,8 +182,8 @@ export const createProductionEntry = async (req, res) => {
 
 export const getproductions = async (req, res) => {
   try {
-    const {  shift,  from, to } = req.query;
-    console.log("GET PRODUCTION ENTRIES REQUEST:", {  shift, from, to });
+    const { shiftId , from, to } = req.query;
+    console.log("GET PRODUCTION ENTRIES REQUEST:", {  shiftId, from, to });
 
     const user = await User.findById(req.user.id);
     const plantId = user?.plantId;
@@ -147,7 +191,7 @@ export const getproductions = async (req, res) => {
 
    const filter = {};
     if (plantId) filter.plantId = plantId;
-    if (shift) filter.shift = shift;
+    if (shiftId) filter.shiftId = shiftId;
     if (from || to) {
       filter.entryDate = {};
       if (from) filter.entryDate.$gte = new Date(from);
@@ -156,7 +200,7 @@ export const getproductions = async (req, res) => {
 
     const entries = await ProductionEntry.find(filter).populate(POPULATE).sort({ createdAt: -1 });
     const plantStrengths = plantId
-      ? await PlantStrength.find({ plantId, status: "Active" })
+      ? await ConveyorStrength.find({ plantId, status: "Active" })
           .populate("modelId", "modelName")
           .populate("partId", "partName")
       : [];

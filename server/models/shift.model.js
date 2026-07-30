@@ -42,7 +42,7 @@ const shiftSchema = new mongoose.Schema({
     },
 
   shiftName: { type: String, required: true, trim: true },        // "A Shift", "General Shift"
-  shiftType: { type: String, enum: ["Day", "Night"], required: true },
+  shiftType: { type: String, enum: ["Morning", "Night","Afternoon"], required: true },
 
   shiftStartTime: { type: String, required: true },                // "07:30"
   shiftEndTime: { type: String, required: true },                  // "19:30"

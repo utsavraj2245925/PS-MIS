@@ -6,10 +6,15 @@ import mongoose from "mongoose";
 const productionItemSchema = new mongoose.Schema({
   modelId: { type: mongoose.Schema.Types.ObjectId, ref: "Model", required: true },
   partId: { type: mongoose.Schema.Types.ObjectId, ref: "Part", required: true },
-  conveyorId: { type: mongoose.Schema.Types.ObjectId, ref: "PlantStrength" }, // which physical line this row was produced on
+  conveyorStrengthId: { type: mongoose.Schema.Types.ObjectId, ref: "ConveyorStrength" },// which physical line this row was produced on
+  shiftId: { type: mongoose.Schema.Types.ObjectId, ref: "Shift"}, 
   productionQty: { type: Number, default: 0 },
   demandPerShift:     { type: Number, default: 0 },
   achievementPercent: { type: Number, default: 0, min: 0, max: 100 }, // (productionQty / demandPerShift) *100
+  locationId:{ type:mongoose.Schema.Types.ObjectId, ref:"Location"},
+  locationName:{
+    type:String,
+  },
 
   // NEW — per-model job timing (operator Start/Complete on the entry form)
   startTime: { type: Date },        // when the operator started loading this model/line
@@ -70,13 +75,18 @@ const productionEntrySchema = new mongoose.Schema({
   // plant info (snapshot at time of entry)
   plantId: { type: mongoose.Schema.Types.ObjectId, ref: "Plant", required: true },
   plantName: { type: String, trim: true },
-  location: { type: String, trim: true },
+ 
+  
 
   // shift
-  shift: {
-    type: String,
-    enum: ["Day", "Night"],
-    required: true
+  shiftId:{
+   type:mongoose.Schema.Types.ObjectId,
+   ref:"Shift",
+   required:true,
+},
+
+  shiftName:{
+    type:String,
   },
 
   reportTime: {
@@ -123,12 +133,11 @@ const productionEntrySchema = new mongoose.Schema({
 productionEntrySchema.index(
   {
     plantId: 1,
-    shift: 1,
+    shiftId: 1,
     entryDate: 1,
+    reportedBy:1,
   },
-  {
-    unique: true,
-  }
+  
 );
 
 export default mongoose.model("ProductionEntry", productionEntrySchema);

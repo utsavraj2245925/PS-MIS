@@ -6,7 +6,7 @@ import {
   Tooltip, message, Empty, Popconfirm, Divider,
 } from "antd";
 import {
-  Clock3, Plus, RefreshCcw, Search, Sun, Moon, Trash2, Ban,
+  Clock3, Plus, RefreshCcw, Search, Sun, Sunset, Moon, Trash2, Ban,
   Pencil, Coffee, CheckCircle2, XCircle, Timer, Building2, MapPin,
 } from "lucide-react";
 
@@ -18,6 +18,20 @@ const BRAND = "#0E7490";
 ────────────────────────────────────────────────────────── */
 const CARD  = "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden";
 const LABEL = "block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1";
+
+/* ──────────────────────────────────────────────────────────
+   SHIFT TYPE — single source of truth for icon + colors,
+   used by the table Type column, the filter dropdown, and the
+   modal's Shift Type select, so all three always stay in sync.
+────────────────────────────────────────────────────────── */
+const SHIFT_TYPE_META = {
+  Morning:   { icon: Sunset, emoji: "🌤️", bg: "#fefce8", border: "#fde68a", color: "#92400e" },
+  Afternoon: { icon: Sun, emoji: "☀️", bg: "#fff7ed", border: "#fed7aa", color: "#c2410c" },
+  Night:     { icon: Moon,   emoji: "🌙", bg: "#eff6ff", border: "#bfdbfe", color: "#1e40af" },
+};
+const SHIFT_TYPE_OPTIONS = Object.entries(SHIFT_TYPE_META).map(([value, m]) => ({
+  value, label: `${m.emoji} ${value}`,
+}));
 
 /* ──────────────────────────────────────────────────────────
    TIME HELPERS — mirror the backend's overnight-safe math
@@ -51,6 +65,7 @@ const StatMini = ({ icon: Icon, label, value, tone = "slate", loading }) => {
     teal:  "bg-teal-50 border-teal-100 text-teal-700",
     blue:  "bg-blue-50 border-blue-100 text-blue-700",
     amber: "bg-amber-50 border-amber-100 text-amber-700",
+    orange:"bg-orange-50 border-orange-100 text-orange-700",
     purple:"bg-purple-50 border-purple-100 text-purple-700",
     green: "bg-green-50 border-green-100 text-green-700",
     slate: "bg-slate-50 border-slate-200 text-slate-700",
@@ -72,7 +87,31 @@ const StatMini = ({ icon: Icon, label, value, tone = "slate", loading }) => {
   );
 };
 
-const CalcTile = ({ label, value, sub, tone }) => {
+/* Section header — same icon-chip + label + rule pattern used across
+   Plant/Model/Part Master, so this modal reads as part of the same app. */
+const SectionHeader = ({ icon: Icon, step, label, hint }) => (
+  <div className="mb-2.5">
+    <div className="flex items-center gap-2">
+      <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+        style={{ background: "#ECFEFF", border: "1px solid rgba(14,116,144,0.2)" }}>
+        <Icon size={12} style={{ color: BRAND }} />
+      </div>
+      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{step} · {label}</span>
+      <div className="flex-1 h-px bg-slate-100" />
+    </div>
+    {hint && <p className="text-[10px] text-slate-400 mt-1 ml-8">{hint}</p>}
+  </div>
+);
+
+/* Section body — light bordered card so the three steps read as
+   distinct groups instead of floating fields separated only by a Divider. */
+const SectionCard = ({ children }) => (
+  <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 mb-3">
+    {children}
+  </div>
+);
+
+const CalcTile = ({ icon: Icon, label, value, sub, tone }) => {
   const tones = {
     slate: "bg-slate-50 border-slate-200 text-slate-700",
     amber: "bg-amber-50 border-amber-200 text-amber-700",
@@ -80,9 +119,12 @@ const CalcTile = ({ label, value, sub, tone }) => {
     cyan:  "bg-cyan-50 border-cyan-200 text-cyan-700",
   };
   return (
-    <div className={`rounded-lg border px-2.5 py-1.5 text-center ${tones[tone]}`}>
-      <div className="text-xs font-extrabold">{value}</div>
-      <div className="text-[9px] opacity-70 mt-0.5">{label}</div>
+    <div className={`rounded-xl border px-3 py-2.5 ${tones[tone]}`}>
+      <div className="flex items-center gap-1.5 mb-1 opacity-70">
+        <Icon size={11} />
+        <span className="text-[9px] font-bold uppercase tracking-wide">{label}</span>
+      </div>
+      <div className="text-sm font-extrabold">{value}</div>
       <div className="text-[8px] opacity-50 mt-0.5">{sub}</div>
     </div>
   );
@@ -211,7 +253,8 @@ export default function ManageShiftPage() {
     const totalLocations = new Set(shifts.map((s) => String(s.locationId?._id || s.locationId))).size;
     const totalPlants = new Set(shifts.map((s) => s.plantId?._id || s.plantId)).size;
     const totalConfigs = shifts.length;
-    const dayShifts = shifts.filter((s) => s.shiftType === "Day").length;
+    const dayShifts = shifts.filter((s) => s.shiftType === "Morning").length;
+    const afternoonShifts = shifts.filter((s) => s.shiftType === "Afternoon").length;
     const nightShifts = shifts.filter((s) => s.shiftType === "Night").length;
 
     const now = dayjs();
@@ -226,7 +269,7 @@ export default function ManageShiftPage() {
       return nm >= startMin && nm < endMin;
     }).length;
 
-    return { totalLocations, totalPlants, totalConfigs, dayShifts, nightShifts, activeNow };
+    return { totalLocations, totalPlants, totalConfigs, dayShifts, afternoonShifts, nightShifts, activeNow };
   }, [shifts]);
 
   const handleResetFilters = () => {
@@ -278,7 +321,7 @@ export default function ManageShiftPage() {
   const openCreateModal = () => {
     setEditingShift(null);
     form.resetFields();
-    form.setFieldsValue({ shiftType: "Day", status: "Active", breaks: [] });
+    form.setFieldsValue({ shiftType: "Morning", status: "Active", breaks: [] });
     setLiveCalc({ totalShiftMinutes: 0, totalBreakMinutes: 0, actualWorkingMinutes: 0 });
     setModalOpen(true);
   };
@@ -435,14 +478,18 @@ export default function ManageShiftPage() {
     { title: "Location", dataIndex: "locationName", key: "locationName", width: 120, render: (v) => <span className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={11} />{v}</span> },
     { title: "Shift Name", dataIndex: "shiftName", key: "shiftName", width: 130, render: (v) => <Tag color="cyan" className="!rounded-lg !text-[11px] !font-semibold">{v}</Tag> },
     {
-      title: "Type", dataIndex: "shiftType", key: "shiftType", width: 90,
-      render: (v) => (
-        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full"
-          style={v === "Day" ? { background: "#fefce8", border: "1px solid #fde68a", color: "#92400e" } : { background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af" }}>
-          {v === "Day" ? <Sun size={10} /> : <Moon size={10} />}{v}
-        </span>
-      ),
-      filters: [{ text: "Day", value: "Day" }, { text: "Night", value: "Night" }],
+      title: "Type", dataIndex: "shiftType", key: "shiftType", width: 100,
+      render: (v) => {
+        const m = SHIFT_TYPE_META[v] || SHIFT_TYPE_META.Morning;
+        const Icon = m.icon;
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full"
+            style={{ background: m.bg, border: `1px solid ${m.border}`, color: m.color }}>
+            <Icon size={10} />{v}
+          </span>
+        );
+      },
+      filters: [{ text: "Morning", value: "Morning" }, { text: "Afternoon", value: "Afternoon" }, { text: "Night", value: "Night" }],
       onFilter: (val, r) => r.shiftType === val,
     },
     { title: "Start", dataIndex: "shiftStartTime", key: "start", width: 74, align: "center", render: (v) => <span className="font-mono text-xs">{v}</span> },
@@ -511,11 +558,12 @@ export default function ManageShiftPage() {
         </div>
 
         {/* ── STATS ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
           <StatMini icon={MapPin} label="Locations" value={stats.totalLocations} tone="slate" loading={loading} />
           <StatMini icon={Building2} label="Total Plants" value={stats.totalPlants} tone="teal" loading={loading} />
           <StatMini icon={Clock3} label="Shift Configs" value={stats.totalConfigs} tone="blue" loading={loading} />
-          <StatMini icon={Sun} label="Day Shifts" value={stats.dayShifts} tone="amber" loading={loading} />
+          <StatMini icon={Sun} label="Morning Shifts" value={stats.dayShifts} tone="amber" loading={loading} />
+          <StatMini icon={Sunset} label="Afternoon Shifts" value={stats.afternoonShifts} tone="orange" loading={loading} />
           <StatMini icon={Moon} label="Night Shifts" value={stats.nightShifts} tone="purple" loading={loading} />
           <StatMini icon={Timer} label="Active Now" value={stats.activeNow} tone="green" loading={loading} />
         </div>
@@ -532,9 +580,9 @@ export default function ManageShiftPage() {
               <Select placeholder="Filter by Plant" allowClear size="small" style={{ width: 170 }}
                 value={plantFilter} onChange={setPlantFilter}
                 options={filterPlantOptions} showSearch optionFilterProp="label" />
-              <Select placeholder="Shift Type" allowClear size="small" style={{ width: 110 }}
+              <Select placeholder="Shift Type" allowClear size="small" style={{ width: 120 }}
                 value={shiftTypeFilter} onChange={setShiftTypeFilter}
-                options={[{ value: "Day", label: "Day" }, { value: "Night", label: "Night" }]} />
+                options={[{ value: "Morning", label: "Morning" }, { value: "Afternoon", label: "Afternoon" }, { value: "Night", label: "Night" }]} />
             </div>
             <div className="flex items-center gap-2">
               <Button size="small" onClick={handleResetFilters} className="!rounded-lg">Reset</Button>
@@ -559,17 +607,20 @@ export default function ManageShiftPage() {
       </div>
 
       {/* ══════════════════════════════════════════════════
-          ADD / EDIT MODAL — compact
+          ADD / EDIT MODAL — compact & polished
       ══════════════════════════════════════════════════ */}
-      <Modal open={modalOpen} onCancel={() => setModalOpen(false)} title={null} footer={null} width={620} centered destroyOnClose>
-        <div style={{ borderBottom: "3px solid #0E7490", margin: "-20px -24px 12px", padding: "13px 20px", background: "#ecfeff" }}>
+      <Modal open={modalOpen} onCancel={() => setModalOpen(false)} title={null} footer={null} width={640} centered destroyOnClose>
+        <div style={{
+          borderBottom: "3px solid #0E7490", margin: "-20px -24px 16px", padding: "15px 22px",
+          background: "linear-gradient(135deg,#ecfeff,#f0fdff)",
+        }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-cyan-100 flex items-center justify-center flex-shrink-0">
-              <Clock3 size={15} style={{ color: BRAND }} />
+            <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Clock3 size={16} style={{ color: BRAND }} />
             </div>
             <div>
               <div className="text-sm font-bold text-slate-800">{editingShift ? "Edit Shift Configuration" : "Add Shift Configuration"}</div>
-              <div className="text-[10px] text-slate-500">
+              <div className="text-[10.5px] text-slate-500 mt-0.5">
                 {editingShift ? `Editing ${editingShift.shiftName} — ${editingShift.plantName}` : "Configure a new shift for a plant"}
               </div>
             </div>
@@ -578,62 +629,56 @@ export default function ManageShiftPage() {
 
         <Form form={form} layout="vertical" size="small" onValuesChange={handleValuesChange}>
           {/* Section 1 — Location & Plant */}
-          <div className="mb-1">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">1 · Location &amp; Plant</div>
+          <SectionHeader icon={Building2} step="1" label="Location & Plant" />
+          <SectionCard>
             <div className="grid grid-cols-2 gap-x-2">
-              <Form.Item name="locationId" label="Location" rules={[{ required: true, message: "Select a location" }]} className="!mb-2">
+              <Form.Item name="locationId" label="Location" rules={[{ required: true, message: "Select a location" }]} className="!mb-1">
                 <Select placeholder="Select location" showSearch optionFilterProp="label" options={locationOptions} />
               </Form.Item>
-              <Form.Item name="plantId" label="Plant" rules={[{ required: true, message: "Select a plant" }]} className="!mb-2">
+              <Form.Item name="plantId" label="Plant" rules={[{ required: true, message: "Select a plant" }]} className="!mb-1">
                 <Select placeholder={modalLocationId ? "Select plant" : "Pick a location first"} showSearch optionFilterProp="label"
                   disabled={!modalLocationId} options={modalPlantOptions} />
               </Form.Item>
             </div>
-          </div>
-
-          <Divider className="!my-2.5" />
+          </SectionCard>
 
           {/* Section 2 — Shift Information */}
-          <div className="mb-1">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">2 · Shift Information</div>
+          <SectionHeader icon={Clock3} step="2" label="Shift Information" />
+          <SectionCard>
             <div className="grid grid-cols-2 gap-x-2">
               <Form.Item name="shiftName" label="Shift Name" rules={[{ required: true, message: "Enter shift name" }]} className="!mb-2">
                 <Input placeholder="e.g. A Shift, General Shift" />
               </Form.Item>
               <Form.Item name="shiftType" label="Shift Type" rules={[{ required: true, message: "Select shift type" }]} className="!mb-2">
-                <Select options={[{ value: "Day", label: "☀️ Day" }, { value: "Night", label: "🌙 Night" }]} />
+                <Select options={SHIFT_TYPE_OPTIONS} />
               </Form.Item>
-              <Form.Item name="shiftStartTime" label="Start Time" rules={[{ required: true, message: "Select start time" }]} className="!mb-2">
+              <Form.Item name="shiftStartTime" label="Start Time" rules={[{ required: true, message: "Select start time" }]} className="!mb-1">
                 <TimePicker format="HH:mm" className="w-full" />
               </Form.Item>
-              <Form.Item name="shiftEndTime" label="End Time" rules={[{ required: true, message: "Select end time" }]} className="!mb-2">
+              <Form.Item name="shiftEndTime" label="End Time" rules={[{ required: true, message: "Select end time" }]} className="!mb-1">
                 <TimePicker format="HH:mm" className="w-full" />
               </Form.Item>
-              <Form.Item name="status" label="Status" className="!mb-2">
+              <Form.Item name="status" label="Status" className="!mb-1 col-span-2">
                 <Select options={[{ value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }]} />
               </Form.Item>
             </div>
-          </div>
-
-          <Divider className="!my-2.5" />
+          </SectionCard>
 
           {/* Section 3 — Breaks */}
-          <div className="mb-1">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-              <Coffee size={11} /> 3 · Break Information
-            </div>
-
+          <SectionHeader icon={Coffee} step="3" label="Break Information" />
+          <SectionCard>
             <Form.List name="breaks">
               {(fields, { add, remove }) => (
                 <>
                   {fields.length === 0 && (
-                    <div className="text-[11px] text-slate-400 mb-2 bg-slate-50 border border-dashed border-slate-200 rounded-lg px-3 py-2.5 text-center">
+                    <div className="flex items-center gap-2 text-[11px] text-slate-400 mb-2 bg-white border border-dashed border-slate-200 rounded-lg px-3 py-2.5">
+                      <Coffee size={13} className="text-slate-300 flex-shrink-0" />
                       No breaks added yet — click "Add Break" below (Lunch, Tea, Maintenance, etc.)
                     </div>
                   )}
 
                   {fields.map((field, idx) => (
-                    <div key={field.key} className="grid grid-cols-12 gap-1.5 items-start bg-slate-50 border border-slate-200 rounded-lg p-2 mb-1.5">
+                    <div key={field.key} className="grid grid-cols-12 gap-1.5 items-start bg-white border border-slate-200 rounded-lg p-2 mb-1.5">
                       <div className="col-span-4">
                         {idx === 0 && <label className={LABEL}>Break Name</label>}
                         <Form.Item {...field} name={[field.name, "breakName"]} rules={[{ required: true, message: "Required" }]} className="!mb-0">
@@ -681,22 +726,21 @@ export default function ManageShiftPage() {
                 </>
               )}
             </Form.List>
-          </div>
-
-          <Divider className="!my-2.5" />
+          </SectionCard>
 
           {/* Auto-calculated summary */}
           <div className="grid grid-cols-4 gap-2">
-            <CalcTile label="Total Shift" value={fmtHM(liveCalc.totalShiftMinutes)} sub={`${liveCalc.totalShiftMinutes} min`} tone="slate" />
-            <CalcTile label="Total Break" value={fmtHM(liveCalc.totalBreakMinutes)} sub={`${liveCalc.totalBreakMinutes} min`} tone="amber" />
-            <CalcTile label="Actual Working" value={fmtHM(liveCalc.actualWorkingMinutes)} sub={`${liveCalc.actualWorkingMinutes} min`} tone="teal" />
-            <CalcTile label="Working Hours" value={fmtHM(liveCalc.actualWorkingMinutes)} sub="excl. breaks" tone="cyan" />
+            <CalcTile icon={Clock3} label="Total Shift" value={fmtHM(liveCalc.totalShiftMinutes)} sub={`${liveCalc.totalShiftMinutes} min`} tone="slate" />
+            <CalcTile icon={Coffee} label="Total Break" value={fmtHM(liveCalc.totalBreakMinutes)} sub={`${liveCalc.totalBreakMinutes} min`} tone="amber" />
+            <CalcTile icon={CheckCircle2} label="Actual Working" value={fmtHM(liveCalc.actualWorkingMinutes)} sub={`${liveCalc.actualWorkingMinutes} min`} tone="teal" />
+            <CalcTile icon={Timer} label="Working Hours" value={fmtHM(liveCalc.actualWorkingMinutes)} sub="excl. breaks" tone="cyan" />
           </div>
         </Form>
 
-        <div className="flex items-center justify-end gap-2 mt-3.5">
+        <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-100">
           <Button size="small" onClick={() => setModalOpen(false)} className="!rounded-lg">Cancel</Button>
-          <Button type="primary" size="small" loading={saving} onClick={handleSave} className="!rounded-lg !font-semibold" style={{ backgroundColor: BRAND, borderColor: BRAND }}>
+          <Button type="primary" size="small" loading={saving} onClick={handleSave}
+            className="!rounded-lg !font-semibold" style={{ backgroundColor: BRAND, borderColor: BRAND, boxShadow: "0 4px 12px -3px rgba(14,116,144,0.4)" }}>
             {editingShift ? "Update Shift" : "Save Shift"}
           </Button>
         </div>
