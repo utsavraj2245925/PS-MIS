@@ -416,9 +416,11 @@ export default function UserProductionPage() {
     setMaterials(data?.data || []);
   }, []);
 
-  const fetchPlantStrengths = useCallback(async () => {
+  const fetchPlantStrengths = useCallback(async (shiftId) => {
     const today = dayjs().format("YYYY-MM-DD");
-    const { data } = await API.get("/production", { params: { from: today, to: today } });
+    const { data } = await API.get("/production", {
+      params: { from: today, to: today, ...(shiftId ? { shiftId } : {}) },
+    });
     setPlantStrengths(data?.plantStrengths || []);
   }, []);
 
@@ -440,7 +442,7 @@ export default function UserProductionPage() {
     try {
       await Promise.all([
         fetchModels(), fetchRejectTypes(), fetchReworkTypes(),
-        fetchDowntimeTypes(), fetchMaterials(), fetchPlantStrengths(), fetchPlantShifts(),
+        fetchDowntimeTypes(), fetchMaterials(), fetchPlantShifts(),
       ]);
     } catch (error) {
       console.error("Error loading data:", error);
@@ -448,7 +450,7 @@ export default function UserProductionPage() {
     } finally {
       setPageLoading(false);
     }
-  }, [fetchModels, fetchRejectTypes, fetchReworkTypes, fetchDowntimeTypes, fetchMaterials, fetchPlantStrengths, fetchPlantShifts]);
+  }, [fetchModels, fetchRejectTypes, fetchReworkTypes, fetchDowntimeTypes, fetchMaterials, fetchPlantShifts]);
 
   useEffect(() => { loadEverything(); }, [loadEverything]);
 
@@ -528,9 +530,23 @@ export default function UserProductionPage() {
     setRefreshing(true);
     setPartsByModel({});
     await loadEverything();
+    if (activeShift?._id) await fetchPlantStrengths(activeShift._id);
     setRefreshing(false);
     message.success("Data refreshed");
   };
+
+  /* Re-fetch conveyor-strength targets whenever the resolved active shift
+     changes (page load, or a Morning→Night rollover mid-session). Scoping
+     by shiftId (and conveyorId, via the backend) is what stops the plant's
+     other shift's demandPerShift from being summed in — e.g. Line 1 having
+     separate 15000 (Shift 1) / 12000 (Shift 2) configs no longer double-count. */
+  useEffect(() => {
+    if (activeShift?._id) {
+      fetchPlantStrengths(activeShift._id);
+    } else {
+      setPlantStrengths([]);
+    }
+  }, [activeShift?._id, fetchPlantStrengths]);
 
   /* ════════════════════════════════════════════════════════
      CONVEYOR LINES  (model+part scoped lines from PlantStrength)
@@ -650,8 +666,16 @@ export default function UserProductionPage() {
         conveyorId: null, conveyorName: null, demandPerShift: 0,
         startTime, endTime, durationMinutes,
         parts: currentModelParts.map((p) => ({
-          partId: p._id, partName: p.partName || p.name, qty: currentPartQtys[p._id] || 0,
-        })),
+        partId: p._id,
+        partName: p.partName || p.name,
+        qty: currentPartQtys[p._id] || 0,
+
+        area: Number(p.area || 0),
+
+        partsPerHanger: Number(
+          p.partsPerHanger || 1
+        ),
+      })),
       },
     ]);
 
@@ -685,20 +709,103 @@ export default function UserProductionPage() {
     return Math.round((actualQty / expectedQty) * 100);
   }, []);
 
+  const calculatePaintedArea = (row) => {
+      return row.parts
+        .reduce(
+          (sum, part) =>
+            sum +
+            (Number(part.qty || 0) *
+              Number(part.area || 0)),
+          0
+        )
+        .toFixed(2);
+    };
+
+    const calculateHangersUsed = (row) => {
+      return row.parts
+        .reduce(
+          (sum, part) =>
+            sum +
+            (
+              Number(part.qty || 0) /
+              Number(
+                part.partsPerHanger || 1
+              )
+            ),
+          0
+        )
+        .toFixed(2);
+    };
+
+  const calculateTotalQty = (row) => {
+  return row.parts.reduce(
+    (sum, part) =>
+      sum + Number(part.qty || 0),
+    0
+  );
+};
+
   const productionColumns = useMemo(() => [
     { title: "#", key: "idx", width: 40, render: (_, __, i) => <span className="text-slate-400">{i + 1}</span> },
     { title: "Model", dataIndex: "modelName", key: "model", width: 110, render: (v) => <Tag color="cyan" className="!rounded-lg !text-[11px] !font-semibold">{v}</Tag> },
     { title: "Start", key: "start", width: 66, align: "center", render: (_, r) => r.startTime ? dayjs(r.startTime).format("HH:mm") : "—" },
     { title: "End", key: "end", width: 66, align: "center", render: (_, r) => r.endTime ? dayjs(r.endTime).format("HH:mm") : "—" },
     { title: "Duration", key: "dur", width: 86, align: "center", render: (_, r) => r.durationMinutes ? <Tag color="geekblue" className="!rounded-lg !text-[11px]">{formatHM(r.durationMinutes)}</Tag> : "—" },
-    {
-      title: "Achv %", key: "achv", width: 84, align: "center",
+    { title: "Achv %", key: "achv", width: 84, align: "center",
       render: (_, row) => {
         // eslint-disable-next-line no-use-before-define
         const pct = computeRowAchievement(row, perHourTarget);
         if (pct == null) return <span className="text-slate-300">—</span>;
         return <Tag color={achievementTone(pct)} className="!rounded-lg !text-[11px] !font-bold">{pct}%</Tag>;
       },
+    },
+    { title: "Painted Area (m²)",
+
+      key: "paintedArea",
+
+      width: 130,
+
+      align: "center",
+
+      render: (_, row) => (
+        <span className="font-semibold text-cyan-700">
+          {calculatePaintedArea(row)}
+        </span>
+      ),
+    },
+
+    {
+      title: "Hangers Used",
+
+      key: "hangerUsed",
+
+      width: 110,
+
+      align: "center",
+
+      render: (_, row) => (
+        <span className="font-semibold text-emerald-700">
+          {calculateHangersUsed(row)}
+        </span>
+      ),
+    },
+    {
+      title: "Total Qty",
+
+      key: "totalQty",
+
+      width: 100,
+
+      align: "center",
+
+      render: (_, row) => (
+        <Tag
+          color="blue"
+          className="!rounded-lg !font-semibold"
+        >
+          {calculateTotalQty(row)}
+        </Tag>
+      ),
     },
     ...allPartNames.map((name) => ({
       title: <span className="uppercase">{name}</span>, key: name, align: "center", width: 110,

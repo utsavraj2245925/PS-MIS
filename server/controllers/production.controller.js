@@ -22,7 +22,7 @@ const POPULATE = [
   { path: "plantId", select: "plantName plantCode locationName" },
   { path: "shiftId", select: "shiftName shiftType shiftStartTime shiftEndTime actualWorkingHours"},
   { path: "productions.modelId", select: "modelName" },
-  { path: "productions.partId", select: "partName area" },
+  { path: "productions.partId", select: "partName area partsPerHanger" },
   { path: "rejects.modelId", select: "modelName" },
   { path: "rejects.partId", select: "partName" },
   { path: "rejects.rejectTypeId", select: "name" },
@@ -113,6 +113,9 @@ export const createProductionEntry = async (req, res) => {
         const demand =
           strength?.demandPerShift || 0;
 
+        const effectiveHanger =
+          strength?.effectiveHangerPerShift || 0;
+
         return {
           ...row,
 
@@ -121,6 +124,9 @@ export const createProductionEntry = async (req, res) => {
           locationName: plant.locationName,
 
           demandPerShift: demand,
+
+          effectiveHangerPerShift:
+            effectiveHanger,
 
           achievementPercent:
             demand > 0
@@ -182,14 +188,15 @@ export const createProductionEntry = async (req, res) => {
 
 export const getproductions = async (req, res) => {
   try {
-    const { shiftId , from, to } = req.query;
-    console.log("GET PRODUCTION ENTRIES REQUEST:", {  shiftId, from, to });
+    const { shiftId, from, to } = req.query;
+    console.log("GET PRODUCTION ENTRIES REQUEST:", { shiftId, from, to });
 
     const user = await User.findById(req.user.id);
     const plantId = user?.plantId;
-    console.log("Authenticated user:", req.user.id, "Plant ID:", plantId);
+    const conveyorId = user?.conveyorId; // assigned per config #4
+    console.log("Authenticated user:", req.user.id, "Plant ID:", plantId, "Conveyor ID:", conveyorId);
 
-   const filter = {};
+    const filter = {};
     if (plantId) filter.plantId = plantId;
     if (shiftId) filter.shiftId = shiftId;
     if (from || to) {
@@ -199,11 +206,13 @@ export const getproductions = async (req, res) => {
     }
 
     const entries = await ProductionEntry.find(filter).populate(POPULATE).sort({ createdAt: -1 });
-    const plantStrengths = plantId
-      ? await ConveyorStrength.find({ plantId, status: "Active" })
-          .populate("modelId", "modelName")
-          .populate("partId", "partName")
-      : [];
+
+    const strengthFilter = { status: "Active" };
+    if (plantId) strengthFilter.plantId = plantId;
+    if (shiftId) strengthFilter.shiftId = shiftId;
+    if (conveyorId) strengthFilter.conveyorId = conveyorId;
+
+    const plantStrengths = plantId ? await ConveyorStrength.find(strengthFilter) : [];
 
     return res.status(200).json({ success: true, message: "Production entries fetched successfully", data: entries, plantStrengths });
   } catch (error) {

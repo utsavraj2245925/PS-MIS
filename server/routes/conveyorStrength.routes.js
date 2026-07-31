@@ -5,6 +5,7 @@ import {
     getAllConfigurations,
     getConfigurationById,
     updateConfiguration,
+    toggleConfigurationStatus,
     deleteConfiguration,
     getConfigurationsByLocation,
     getConfigurationsByPlant,
@@ -71,6 +72,18 @@ router.put(
 );
 
 /* ==========================================================
+   TOGGLE STATUS (Active <-> Inactive)
+   ⚠ This was already built in your service + controller
+   (toggleConfigurationStatus) but had no route pointing to it —
+   added here so it's actually reachable.
+========================================================== */
+
+router.patch(
+    "/:id/toggle-status",
+    toggleConfigurationStatus
+);
+
+/* ==========================================================
    DELETE
 ========================================================== */
 
@@ -80,4 +93,3 @@ router.delete(
 );
 
 export default router;
-

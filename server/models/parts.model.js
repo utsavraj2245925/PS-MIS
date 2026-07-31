@@ -17,17 +17,18 @@ const partSchema = new mongoose.Schema(
     
     area: {
       type: Number,
+      default: 0,
     },
     partsPerHanger: {
       type: Number,
+      default: 1,
     },
     status: {
       type: String,
       enum: ["Active", "Inactive"],
       default: "Active",
     },
-    area: { type: Number, default: 0 },
-    partsPerHanger: { type: Number, default: 1 },
+   
   },
   { timestamps: true }
 );

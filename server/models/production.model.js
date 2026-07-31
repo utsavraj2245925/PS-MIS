@@ -12,9 +12,9 @@ const productionItemSchema = new mongoose.Schema({
   demandPerShift:     { type: Number, default: 0 },
   achievementPercent: { type: Number, default: 0, min: 0, max: 100 }, // (productionQty / demandPerShift) *100
   locationId:{ type:mongoose.Schema.Types.ObjectId, ref:"Location"},
-  locationName:{
-    type:String,
-  },
+  locationName:{ type:String},
+  effectiveHangerPerShift: {type: Number, default: 0},
+  
 
   // NEW — per-model job timing (operator Start/Complete on the entry form)
   startTime: { type: Date },        // when the operator started loading this model/line

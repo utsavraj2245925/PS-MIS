@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import axios from "axios";
 import {
   Form, Row, Col, Select, InputNumber, Button, Table,
-  Input, Empty, Skeleton, Spin, message, Popconfirm, Modal,
+  Input, Empty, Skeleton, Spin, message, Modal,
 } from "antd";
 import {
   Settings2, Gauge, Timer, Layers3, RefreshCw, Target, Ban,
@@ -36,6 +36,17 @@ import {
    Activate/Deactivate actions below just resend the record's own
    current data through your EXISTING PUT /conveyor-strength/:id
    with only `status` flipped — no new backend route needed.
+
+   DELETE — fixed in this pass: was wrapped in antd's <Popconfirm>,
+   which clones its trigger and floats its "Yes/No" popup in a portal
+   outside the table's DOM. With this table's scroll={{x:...}}, that
+   popup can end up clipped/mispositioned so clicking "Yes" silently
+   does nothing. Your own backend test (raw fetch, 200 OK) already
+   proved the API itself is fine — so Delete confirmation now uses
+   Modal.confirm instead, the exact same pattern Deactivate already
+   uses successfully in this file. Diagnostic console.log lines are
+   also added around the request so any future issue is visible in
+   DevTools instead of failing silently.
 ============================================================ */
 
 const api = axios.create({ baseURL: "/api" });
@@ -85,6 +96,22 @@ const buildStatusPayload = (record, status) => ({
   hangerEfficiency: record.hangerEfficiency,
   status,
 });
+
+/* Turns a caught axios error into a message that actually says what
+   happened, instead of a generic fallback every time. In particular:
+   err.response being completely absent means the request never got a
+   reply at all — most commonly a CORS block (e.g. DELETE not listed
+   in your server's allowed methods), the backend being down, or a
+   wrong baseURL — NOT a validation problem on the server. */
+const diagnoseError = (err, fallback) => {
+  if (!err?.response) {
+    return "Request never reached the server — check the backend is running, and that DELETE/PATCH are allowed in its CORS config (a common cause when PUT/POST work but this one doesn't).";
+  }
+  if (err.response.status === 404) {
+    return "Not found on the server. It may already be gone, or this route isn't registered on your running backend yet.";
+  }
+  return err.response.data?.message || fallback;
+};
 
 /* ───────────────────────────────────────────── shared visual bits (same theme as PlantMasterPage, ~10% tighter) */
 const StatusTag = ({ status }) => {
@@ -268,6 +295,15 @@ export default function ManageConveyorPage() {
     }
   }, []);
 
+  /* Reset antd's message duration on mount. message.config() is GLOBAL —
+     if another page in this app set it very short (e.g. 0.5s), every
+     message.xxx() call everywhere inherits that, including this page.
+     This guarantees toasts here stay readable regardless of what else
+     ran earlier in the session. */
+  useEffect(() => {
+    message.config({ duration: 4 });
+  }, []);
+
   useEffect(() => {
     (async () => {
       setInitialLoading(true);
@@ -360,17 +396,52 @@ export default function ManageConveyorPage() {
     pageTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  /* ── Delete (hard delete — your service does configuration.deleteOne()) ── */
+  /* ── Delete (hard delete — your service does configuration.deleteOne()) ──
+     Confirmation goes through Modal.confirm (see confirmDelete below)
+     instead of Popconfirm — see the note above that function for why. */
   const handleDelete = async (id) => {
+    // Temporary diagnostics: your backend already tested clean (200 +
+    // success via raw fetch), so if delete still doesn't visibly work,
+    // these three lines show exactly which stage stops — "requested" never
+    // appearing means confirmDelete's onOk isn't firing; "requested"
+    // appearing but no "response" means the request hung or was blocked;
+    // "response" appearing but the row not disappearing means fetchRecords()
+    // or the render is the problem, not the delete itself.
+    console.log("[ManageConveyor] delete requested for id:", id);
     try {
-      await api.delete(`/conveyor-strength/${id}`);
+      const res = await api.delete(`/conveyor-strength/${id}`);
+      console.log("[ManageConveyor] delete response:", res.status, res.data);
       message.success("Configuration deleted");
       if (editingId === id) handleReset();
       if (selectedRecord?._id === id) setDetailOpen(false);
       fetchRecords();
     } catch (err) {
-      message.error(err?.response?.data?.message || "Delete failed");
+      console.error("[ManageConveyor] delete failed:", err);
+      // Modal instead of a toast here on purpose — this stays open until you
+      // close it, so it can't vanish before you get to read it.
+      Modal.error({
+        title: "Delete failed",
+        content: diagnoseError(err, "Delete failed"),
+      });
     }
+  };
+
+  /* ── Delete confirmation — Modal.confirm, not Popconfirm ──
+     Popconfirm works by cloning its trigger child and injecting its own
+     onClick, then rendering its "Yes/No" popup in a portal that floats
+     outside the table's DOM. In a table with scroll={{ x: ... }} (like
+     this one), that popup can end up clipped or mispositioned, so it looks
+     like clicking "Yes" does nothing even though the click technically
+     lands somewhere else. Deactivate already uses Modal.confirm in this
+     same file and that one isn't reported as broken — Delete now uses the
+     identical, proven pattern instead of Popconfirm. */
+  const confirmDelete = (record) => {
+    Modal.confirm({
+      title: "Delete this configuration?",
+      content: `This permanently removes "${record.conveyorName || "this configuration"}" for ${record.plantName || "this plant"}. This cannot be undone.`,
+      okText: "Delete", okType: "danger", cancelText: "Cancel",
+      onOk: () => handleDelete(record._id),
+    });
   };
 
   /* ── Activate — instant, non-destructive. Reuses the existing PUT
@@ -382,7 +453,7 @@ export default function ManageConveyorPage() {
       if (selectedRecord?._id === record._id) setSelectedRecord({ ...selectedRecord, status: "Active" });
       fetchRecords();
     } catch (err) {
-      message.error(err?.response?.data?.message || "Failed to activate configuration");
+      message.error(diagnoseError(err, "Failed to activate configuration"));
     }
   };
 
@@ -400,7 +471,7 @@ export default function ManageConveyorPage() {
           if (selectedRecord?._id === record._id) setSelectedRecord({ ...selectedRecord, status: "Inactive" });
           fetchRecords();
         } catch (err) {
-          message.error(err?.response?.data?.message || "Failed to deactivate configuration");
+          message.error(diagnoseError(err, "Failed to deactivate configuration"));
         }
       },
     });
@@ -518,15 +589,9 @@ export default function ManageConveyorPage() {
               <CheckCircle2 size={12} />
             </IconBtn>
           )}
-          <Popconfirm
-            title="Delete Configuration?"
-            okText="Yes" cancelText="No" okType="danger"
-            onConfirm={() => handleDelete(r._id)}
-          >
-            <IconBtn title="Delete" bg="#FFF1F2" fg="#BE123C">
-              <Trash2 size={12} />
-            </IconBtn>
-          </Popconfirm>
+          <IconBtn title="Delete" bg="#FFF1F2" fg="#BE123C" onClick={() => confirmDelete(r)}>
+            <Trash2 size={12} />
+          </IconBtn>
         </div>
       ) },
   ];
@@ -923,14 +988,12 @@ export default function ManageConveyorPage() {
                       Activate
                     </Button>
                   )}
-                  <Popconfirm
-                    title="Delete Configuration?" okText="Yes" cancelText="No" okType="danger"
-                    onConfirm={() => handleDelete(selectedRecord._id)}
+                  <Button
+                    style={{ ...S.dangerBtnAntd, flex: 1, justifyContent: "center", height: 33 }} icon={<Trash2 size={12} />}
+                    onClick={() => confirmDelete(selectedRecord)}
                   >
-                    <Button style={{ ...S.dangerBtnAntd, flex: 1, justifyContent: "center", height: 33 }} icon={<Trash2 size={12} />}>
-                      Delete
-                    </Button>
-                  </Popconfirm>
+                    Delete
+                  </Button>
                 </div>
               </div>
             </div>
