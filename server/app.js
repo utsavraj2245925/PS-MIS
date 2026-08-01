@@ -21,6 +21,8 @@ import materialRoutes from "./routes/material.route.js";
 import shiftRoutes from "./routes/shift.route.js";
 import conveyorStrengthRoutes from "./routes/conveyorStrength.routes.js";
 import locationRoutes from "./routes/location.routes.js";
+import dashboardRoutes from "./routes/dashboard.route.js";
+
 
 // Connect Database
 await connectDB();
@@ -56,12 +58,14 @@ app.use("/api/production", productionEntryRoutes);
 app.use("/api/conveyor-strength", conveyorStrengthRoutes);
 app.use("/api/locations", locationRoutes);
 
+
 // Master Routes
 
 app.use("/api/downtime-types", downtimeRoutes);
 app.use("/api/materials", materialRoutes);
 app.use("/api/defects", defectsRoutes);
 app.use("/api/shifts", shiftRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 // Health Check
 app.get("/", (req, res) => {

@@ -157,8 +157,18 @@ export const createProductionEntry = async (req, res) => {
     const totalProductionQty = sumBy(enrichedProductions, "productionQty") + totalReworkQty; // rework auto-counts into production
     const totalDefectQty = totalRejectQty + totalReworkQty;
 
-    // shift-level target vs achieved — sum of the specific lines actually used in this entry
-    const totalTarget = sumBy(enrichedProductions, "demandPerShift");
+    // shift-level target — computed the SAME way as getproductions (plantId +
+    // shiftId + user's assigned conveyorId), not derived from per-row
+    // conveyorStrengthId. That per-row field never actually gets populated
+    // (frontend sends `conveyorId`, not `conveyorStrengthId`), and under the
+    // current schema demand lives at Plant+Shift+Conveyor level anyway, not
+    // per model/part. This keeps the entry page's displayed target and the
+    // saved record's target as one single source of truth.
+    const strengthFilter = { plantId: plant._id, shiftId: selectedShift._id, status: "Active" };
+    if (user.conveyorId) strengthFilter.conveyorId = user.conveyorId;
+    const activeStrengths = await ConveyorStrength.find(strengthFilter).lean();
+
+    const totalTarget = sumBy(activeStrengths, "demandPerShift");
     const totalAchieved = sumBy(enrichedProductions, "productionQty");
     const shiftSummary = {
       target: totalTarget,

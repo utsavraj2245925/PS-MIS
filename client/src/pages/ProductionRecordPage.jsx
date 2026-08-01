@@ -118,10 +118,17 @@ function StatCard({ icon: Icon, label, value, sub, tone = "slate", loading }) {
 /* ─────────────────────────────────────────────────────────
    DETAIL MODAL
 ───────────────────────────────────────────────────────── */
-function RecordDetailModal({ record, open, onClose, plantTotalTarget = 0 }) {
+function RecordDetailModal({ record, open, onClose, plantStrengths = [] }) {
   if (!record) return null;
 
-  const modalTarget = record.shiftSummary?.target > 0 ? record.shiftSummary.target : plantTotalTarget;
+  const modalTarget = (() => {
+    if (record.shiftSummary?.target > 0) return record.shiftSummary.target;
+    const rShiftId = record.shiftId?._id || record.shiftId;
+    const scoped = rShiftId
+      ? plantStrengths.filter((p) => String(p.shiftId) === String(rShiftId))
+      : plantStrengths;
+    return scoped.reduce((sum, p) => sum + (p.demandPerShift || 0), 0);
+  })();
   const modalAchieved = record.shiftSummary?.achieved ?? record.totalProductionQty ?? 0;
   const modalAchievement = modalTarget > 0 ? parseFloat(((modalAchieved / modalTarget) * 100).toFixed(2)) : 0;
 
@@ -166,7 +173,7 @@ function RecordDetailModal({ record, open, onClose, plantTotalTarget = 0 }) {
           <table className="w-full min-w-[560px]">
             <thead>
               <tr>
-                {["#", "Line", "Model", "Part", "Production Qty", "Target", "Achievement %"].map(h => (
+                {["#", "Line", "Model", "Part", "Production Qty", "Painted Area (m²)", "Hanger Used"].map(h => (
                   <th key={h} className={TH}>{h}</th>
                 ))}
               </tr>
@@ -174,25 +181,32 @@ function RecordDetailModal({ record, open, onClose, plantTotalTarget = 0 }) {
             <tbody>
               {(record.productions || []).length === 0 ? (
                 <tr><td colSpan={7} className="py-10 text-center text-slate-400">No production entries</td></tr>
-              ) : (record.productions || []).map((e, i) => (
-                <tr key={i} className="hover:bg-slate-50/60">
-                  <td className={`${TD} text-slate-400 w-10`}>{i + 1}</td>
-                  <td className={TD}>
-                    {name(e.conveyorId, ["conveyorName"]) !== "—"
-                      ? <Tag color="blue" className="!rounded-lg !font-semibold">{name(e.conveyorId, ["conveyorName"])}</Tag>
-                      : <span className="text-slate-300 text-xs">—</span>}
-                  </td>
-                  <td className={TD}>
-                    <Tag color="cyan" className="!rounded-lg !font-semibold">
-                      {name(e.modelId, ["modelName", "name"])}
-                    </Tag>
-                  </td>
-                  <td className={`${TD} font-medium`}>{name(e.partId, ["partName", "name"])}</td>
-                  <td className={`${TD} font-bold text-blue-700 text-center`}>{e.productionQty ?? 0}</td>
-                  <td className={`${TD} font-semibold text-slate-600 text-center`}>{e.demandPerShift ?? 0}</td>
-                  <td className={`${TD} font-semibold text-teal-600 text-center`}>{e.achievementPercent ?? 0}%</td>
-                </tr>
-              ))}
+              ) : (record.productions || []).map((e, i) => {
+                const partArea = Number(e.partId?.area || 0);
+                const partsPerHanger = Number(e.partId?.partsPerHanger || 1);
+                const qty = Number(e.productionQty || 0);
+                const rowPaintedArea = (qty * partArea).toFixed(2);
+                const rowHangersUsed = (qty / partsPerHanger).toFixed(2);
+                return (
+                  <tr key={i} className="hover:bg-slate-50/60">
+                    <td className={`${TD} text-slate-400 w-10`}>{i + 1}</td>
+                    <td className={TD}>
+                      {name(e.conveyorId, ["conveyorName"]) !== "—"
+                        ? <Tag color="blue" className="!rounded-lg !font-semibold">{name(e.conveyorId, ["conveyorName"])}</Tag>
+                        : <span className="text-slate-300 text-xs">—</span>}
+                    </td>
+                    <td className={TD}>
+                      <Tag color="cyan" className="!rounded-lg !font-semibold">
+                        {name(e.modelId, ["modelName", "name"])}
+                      </Tag>
+                    </td>
+                    <td className={`${TD} font-medium`}>{name(e.partId, ["partName", "name"])}</td>
+                    <td className={`${TD} font-bold text-blue-700 text-center`}>{qty}</td>
+                    <td className={`${TD} font-semibold text-cyan-700 text-center`}>{rowPaintedArea}</td>
+                    <td className={`${TD} font-semibold text-emerald-700 text-center`}>{rowHangersUsed}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -610,7 +624,18 @@ export default function ProductionRecordsPage() {
     // Per-record target: prefer the value actually saved on that entry (shiftSummary.target).
     // Falls back to the plant's current demand only if an entry has 0/no target saved —
     // keeps numbers honest instead of a hardcoded value on every row.
-  const getRecordTarget = (r) => (r.shiftSummary?.target > 0 ? r.shiftSummary.target : plantTotalTarget);
+  // Scoped fallback for records saved before the target fix (shiftSummary.target
+  // was 0 on every entry due to the conveyorId/conveyorStrengthId field mismatch).
+  // Instead of one blanket plant-wide sum, match plantStrengths to THIS record's
+  // own shift so a Shift 1 record doesn't inherit Shift 2's demand and vice versa.
+  const getRecordTarget = (r) => {
+    if (r.shiftSummary?.target > 0) return r.shiftSummary.target;
+    const rShiftId = r.shiftId?._id || r.shiftId;
+    const scoped = rShiftId
+      ? plantStrengths.filter((p) => String(p.shiftId) === String(rShiftId))
+      : plantStrengths;
+    return scoped.reduce((sum, p) => sum + (p.demandPerShift || 0), 0);
+  };
 
   const getRecordAchievement = (r) => {
       const target = getRecordTarget(r);
@@ -620,6 +645,8 @@ export default function ProductionRecordsPage() {
 
   // Which conveyor line(s) contributed production rows to this record —
   // reads productions[].conveyorId (populated with conveyorName by the backend).
+  // Still used for the "Total Target" KPI tooltip and the Excel export sheet,
+  // even though it's no longer rendered as its own table column.
   const getRecordLines = (r) => {
     const names = new Set();
     (r.productions || []).forEach((p) => {
@@ -627,6 +654,28 @@ export default function ProductionRecordsPage() {
       if (line && typeof line === "object" && line.conveyorName) names.add(line.conveyorName);
     });
     return [...names];
+  };
+
+  // Sum of (productionQty × part.area) across every production row in this
+  // record — part.area comes from the populated partId (see POPULATE in
+  // the controller: "productions.partId" selects "partName area partsPerHanger").
+  // Rows whose part has no area configured contribute 0.
+  const getRecordPaintedArea = (r) => {
+    const total = (r.productions || []).reduce((sum, p) => {
+      const area = Number(p.partId?.area || 0);
+      return sum + Number(p.productionQty || 0) * area;
+    }, 0);
+    return total.toFixed(2);
+  };
+
+  // Sum of (productionQty ÷ part.partsPerHanger) across every production
+  // row — falls back to 1 per hanger if partsPerHanger isn't configured.
+  const getRecordHangersUsed = (r) => {
+    const total = (r.productions || []).reduce((sum, p) => {
+      const pph = Number(p.partId?.partsPerHanger || 1);
+      return sum + Number(p.productionQty || 0) / pph;
+    }, 0);
+    return total.toFixed(2);
   };
 
   /* ── KPIs ── */
@@ -679,6 +728,8 @@ const kpis = useMemo(() => {
         "Achieved":            r.shiftSummary?.achieved     ?? r.totalProductionQty ?? 0,
         "Achievement %":       r.shiftSummary?.achievement  ?? 0,
         "Production Qty":      r.totalProductionQty   ?? 0,
+        "Painted Area (m²)":   getRecordPaintedArea(r),
+        "Hanger Used":         getRecordHangersUsed(r),
         "Reject Qty":          r.totalRejectQty        ?? 0,
         "Rework Qty":          r.totalReworkQty        ?? 0,
         "Total Defects":       r.totalDefectQty ?? ((r.totalRejectQty ?? 0) + (r.totalReworkQty ?? 0)),
@@ -698,7 +749,7 @@ const kpis = useMemo(() => {
       ws["!cols"] = [
         { wch: 6 },  { wch: 12 }, { wch: 8 },  { wch: 8 },  { wch: 20 },
         { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 9 },  { wch: 10 },
-        { wch: 14 }, { wch: 14 }, { wch: 11 }, { wch: 11 }, { wch: 13 },
+        { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 13 },
         { wch: 15 }, { wch: 17 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 11 },
       ];
 
@@ -762,18 +813,15 @@ const kpis = useMemo(() => {
       ),
     },
     {
-      title: "Line", key: "line", width: 100, align: "center",
+      title: "Achievement %", key: "ach", width: 85, align: "center",
+      sorter: (a, b) => getRecordAchievement(a) - getRecordAchievement(b),
       render: (_, r) => {
-        const lines = getRecordLines(r);
-        if (lines.length === 0) return <span className="text-slate-300 text-[10px]">—</span>;
+        const v = getRecordAchievement(r);
+        const color = v >= 90 ? "text-green-600" : v >= 70 ? "text-amber-600" : "text-red-500";
         return (
-          <div className="flex flex-wrap gap-1 justify-center">
-            {lines.map((l) => (
-              <Tag key={l} color="blue" className="!rounded-md !text-[10px] !font-semibold !m-0 !px-1.5 !py-0 !leading-4">
-                {l}
-              </Tag>
-            ))}
-          </div>
+          <span className={`text-xs font-black ${color}`}>
+            {v}<span className="text-[9px] font-normal text-slate-400">%</span>
+          </span>
         );
       },
     },
@@ -789,17 +837,18 @@ const kpis = useMemo(() => {
       ),
     },
     {
-      title: "Achievement %", key: "ach", width: 85, align: "center",
-      sorter: (a, b) => getRecordAchievement(a) - getRecordAchievement(b),
-      render: (_, r) => {
-        const v = getRecordAchievement(r);
-        const color = v >= 90 ? "text-green-600" : v >= 70 ? "text-amber-600" : "text-red-500";
-        return (
-          <span className={`text-xs font-black ${color}`}>
-            {v}<span className="text-[9px] font-normal text-slate-400">%</span>
-          </span>
-        );
-      },
+      title: "Painted Area (m²)", key: "paintedArea", width: 90, align: "center",
+      sorter: (a, b) => parseFloat(getRecordPaintedArea(a)) - parseFloat(getRecordPaintedArea(b)),
+      render: (_, r) => (
+        <span className="text-xs font-bold text-cyan-700">{getRecordPaintedArea(r)}</span>
+      ),
+    },
+    {
+      title: "Hanger Used", key: "hangerUsed", width: 85, align: "center",
+      sorter: (a, b) => parseFloat(getRecordHangersUsed(a)) - parseFloat(getRecordHangersUsed(b)),
+      render: (_, r) => (
+        <span className="text-xs font-bold text-emerald-700">{getRecordHangersUsed(r)}</span>
+      ),
     },
     {
       title: "Reject", key: "rej", width: 55, align: "center",
@@ -1234,7 +1283,7 @@ const kpis = useMemo(() => {
         record={selectedRecord}
         open={detailOpen}
         onClose={() => { setDetailOpen(false); setSelectedRecord(null); }}
-        plantTotalTarget={plantTotalTarget}
+        plantStrengths={plantStrengths}
       />
     </div>
   );

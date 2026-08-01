@@ -1236,17 +1236,39 @@ export default function UserProductionPage() {
       {/* ══════════════════════════════════════════════════
           NAVBAR
       ══════════════════════════════════════════════════ */}
-      <div className="bg-white sticky top-0 z-50" style={{ borderBottom: "1px solid #e5e7eb", boxShadow: "0 1px 8px 0 rgba(0,0,0,0.06)" }}>
-        <div className="px-3 py-0 flex items-center justify-between gap-2 h-[46px] flex-wrap">
+      <div
+        className="bg-white sticky top-0 z-50"
+        style={{
+          borderBottom: "1px solid #e2e8f0",
+          boxShadow: "0 1px 12px rgba(0,0,0,0.06)",
+        }}
+      >
+        <div className="px-5 h-[60px] flex items-center justify-between gap-3">
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg,#c00000,#8b0000)" }}>
-              <img src="/src/assets/logo/pg-logo.png" alt="PG" className="w-6 h-6 object-contain"
-                onError={(e) => { e.target.style.display = "none"; e.target.parentNode.innerHTML = '<span style="color:#fff;font-weight:800;font-size:11px">PG</span>'; }} />
-            </div>
+          {/* LEFT — branding */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div
+              className="w-20 h-20 rounded-full flex items-center justify-center"
+            
+            >
+               <img
+                src="/src/assets/logo/pg-logo.png"
+                alt="PG"
+                className="w-20 h-20 object-contain"
+                onError={(e) => {
+                  e.target.style.display = "none";
+                  e.target.parentNode.innerHTML = '<span style="color:#fff;font-weight:800;font-size:14px;letter-spacing:0.5px">PG</span>';
+                }}
+              />
+             </div> 
+
             <div className="leading-none">
-              <div className="font-extrabold text-sm tracking-tight" style={{ color: "#A11313" }}>PG-GROUP</div>
-              <div className="text-[9px] font-medium text-slate-400 mt-0.5 tracking-wide uppercase">Paint Shop MIS</div>
+              <div className="font-black text-[15px]" style={{ color: "#b00000", letterSpacing: "-0.5px" }}>
+                PG-GROUP
+              </div>                                   
+              <div className="text-[10px] text-slate-400 mt-0.5 font-medium tracking-wide">
+                PAINT SHOP MIS
+              </div>
             </div>
             <div className="w-px h-7 bg-slate-200 mx-1" />
             <div>
