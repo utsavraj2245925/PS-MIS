@@ -1,6 +1,8 @@
 import ProductionEntry from "../../models/production.model.js";
 import Plant from "../../models/plants.model.js";
 import Shift from "../../models/shift.model.js";
+import Part from "../../models/parts.model.js";
+import ConveyorStrength from "../../models/ConveyorStrength.model.js";
 
 const sum = (arr, key) =>
   arr.reduce((total, item) => total + Number(item[key] || 0), 0);
@@ -18,25 +20,38 @@ export const getSummary = async (user, filters = {}) => {
     /* ==============================
        DATE FILTER
     ============================== */
+    const query = {};
 
-    const startDate = fromDate
-      ? new Date(fromDate)
-      : new Date(new Date().setHours(0, 0, 0, 0));
+    if (fromDate || toDate) {
+      query.entryDate = {};
 
-    const endDate = toDate
-      ? new Date(toDate)
-      : new Date(new Date().setHours(23, 59, 59, 999));
+      if (fromDate) {
+        query.entryDate.$gte = new Date(fromDate);
+      }
 
-    /* ==============================
-       FILTER BUILDER
-    ============================== */
+      if (toDate) {
+        query.entryDate.$lte = new Date(toDate);
+      }
+    }
 
-    const query = {
-      entryDate: {
-        $gte: startDate,
-        $lte: endDate,
-      },
-    };
+    // const startDate = fromDate
+    //   ? new Date(fromDate)
+    //   : new Date(new Date().setHours(0, 0, 0, 0));
+
+    // const endDate = toDate
+    //   ? new Date(toDate)
+    //   : new Date(new Date().setHours(23, 59, 59, 999));
+
+    // /* ==============================
+    //    FILTER BUILDER
+    // ============================== */
+
+    // const query = {
+    //   entryDate: {
+    //     $gte: startDate,
+    //     $lte: endDate,
+    //   },
+    // };
 
     /* ==============================
        ROLE BASED ACCESS
@@ -64,7 +79,13 @@ export const getSummary = async (user, filters = {}) => {
        FETCH DATA
     ============================== */
 
-    const entries = await ProductionEntry.find(query).lean();
+    const entries = await ProductionEntry
+      .find(query)
+      .populate({
+        path: "productions.partId",
+        select: "area partsPerHanger",
+      })
+      .lean();
 
     console.log("DASHBOARD QUERY =", query);
 
@@ -166,6 +187,8 @@ export const getSummary = async (user, filters = {}) => {
       entries,
       "totalDowntime"
     );
+    
+    
 
     /* ==============================
        MANPOWER
@@ -200,27 +223,25 @@ export const getSummary = async (user, filters = {}) => {
        PAINTED AREA
     ============================== */
 
-    let paintedArea = 0;
+  let paintedArea = 0;
 
     entries.forEach((entry) => {
-      if (
-        Array.isArray(entry.productions)
-      ) {
-        entry.productions.forEach(
-          (item) => {
-            const qty = Number(
-              item.productionQty || 0
-            );
 
-            const area = Number(
-              item.area || 0
-            );
+      entry.productions?.forEach((row) => {
 
-            paintedArea +=
-              qty * area;
-          }
-        );
-      }
+        const qty =
+          Number(row.productionQty || 0);
+
+        const areaMM2 =
+          Number(
+            row.partId?.area || 0
+          );
+
+        paintedArea +=
+          (qty * areaMM2) / 1000000;
+
+      });
+
     });
 
     /* ==============================
@@ -229,26 +250,54 @@ export const getSummary = async (user, filters = {}) => {
 
     let usedHangers = 0;
 
-    let effectiveHangers = 0;
+      entries.forEach((entry) => {
 
-    entries.forEach((entry) => {
-      if (
-        Array.isArray(entry.productions)
-      ) {
-        entry.productions.forEach(
-          (item) => {
-            usedHangers += Number(
-              item.hangersUsed || 0
+        entry.productions?.forEach((row) => {
+
+          const qty =
+            Number(row.productionQty || 0);
+
+          const partsPerHanger =
+            Number(
+              row.partId?.partsPerHanger || 1
             );
 
-            effectiveHangers += Number(
-              item.effectiveHangerPerShift ||
-                0
-            );
-          }
-        );
-      }
-    });
+          usedHangers +=
+            qty / partsPerHanger;
+
+        });
+
+      });
+    //
+    const strengthQuery = {
+      status: "Active",
+    };
+
+    if (query.plantId) {
+      strengthQuery.plantId =
+        query.plantId;
+    }
+
+    if (query.shiftId) {
+      strengthQuery.shiftId =
+        query.shiftId;
+    }
+
+    const strengths =
+      await ConveyorStrength.find(
+        strengthQuery
+      ).lean();
+
+    const effectiveHangers =
+      strengths.reduce(
+        (total, item) =>
+          total +
+          Number(
+            item.effectiveHangerPerShift || 0
+          ),
+        0
+      );
+    
 
     const hangerUtilization =
       effectiveHangers > 0

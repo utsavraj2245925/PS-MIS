@@ -168,6 +168,43 @@ export const createProductionEntry = async (req, res) => {
     if (user.conveyorId) strengthFilter.conveyorId = user.conveyorId;
     const activeStrengths = await ConveyorStrength.find(strengthFilter).lean();
 
+    const allStrengths =
+      await ConveyorStrength.find({})
+      .lean();
+
+    console.log(
+      "ALL CONVEYOR STRENGTHS =",
+      allStrengths.map(x => ({
+        plantId: x.plantId?.toString(),
+        shiftId: x.shiftId?.toString(),
+        conveyorId: x.conveyorId?.toString(),
+        demandPerShift: x.demandPerShift,
+        status: x.status
+      }))
+    );
+
+    console.log(
+      "FILTER =",
+      {
+        plantId:
+          plant._id?.toString(),
+        shiftId:
+          selectedShift._id?.toString(),
+        conveyorId:
+          user.conveyorId?.toString(),
+      }
+    );
+    
+    console.log(
+      "ACTIVE CONVEYOR STRENGTHS =",
+      activeStrengths
+    );
+
+    console.log(
+      "USER CONVEYOR ID =",
+      user.conveyorId
+    );
+
     const totalTarget = sumBy(activeStrengths, "demandPerShift");
     const totalAchieved = sumBy(enrichedProductions, "productionQty");
     const shiftSummary = {

@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import DashboardLayout from "./layouts/DashboardLayout";
 import LoginPage from "./pages/LoginPage";
-import DashboardPage from "./pages/DashboardPage";
+import DashboardPage from "./pages/dashboard/DashboardPage";
 import PlantMasterPage from "./pages/PlantMasterPage";
 import ModelMasterPage from "./pages/ModelMasterPage";
 import PartMasterPage from "./pages/PartMasterPage";
@@ -173,6 +173,16 @@ function App() {
         <Route
           path="*"
           element={<Navigate to={user ? "/" : "/login"} replace />}
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <DashboardPage />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
         />
 
       </Routes>

@@ -33,16 +33,16 @@ const locationSchema = new mongoose.Schema(
   }
 );
 
-/* ==========================
+/* =======================
    INDEXES
 ========================== */
 
-locationSchema.index({
-  locationCode: 1,
-});
+// locationSchema.index({
+//   locationCode: 1,
+// });
 
-locationSchema.index({
-  locationName: 1,
-});
+// locationSchema.index({
+//   locationName: 1,
+// });
 
 export default mongoose.model("Location", locationSchema);
