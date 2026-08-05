@@ -75,8 +75,12 @@ const productionEntrySchema = new mongoose.Schema({
   // plant info (snapshot at time of entry)
   plantId: { type: mongoose.Schema.Types.ObjectId, ref: "Plant", required: true },
   plantName: { type: String, trim: true },
- 
-  
+
+  // location info (snapshot at time of entry) — needed for location-wise
+  // dashboard filtering; without these declared, the controller's
+  // locationId/locationName were being silently stripped on save.
+  locationId: { type: mongoose.Schema.Types.ObjectId, ref: "Location" },
+  locationName: { type: String, trim: true },
 
   // shift
   shiftId:{

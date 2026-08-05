@@ -12,7 +12,7 @@ import consumable from "../models/consumable.model.js";
 import shift from "../models/shift.model.js";
 import defect from "../models/defects.model.js";
 import material from "../models/material.model.js"; 
-
+import location from "../models/location.model.js";
 
 /* ========================= POPULATE CONFIG ========================= */
 

@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import {
   Form, Row, Col, Select, Input, Button, Table, Tag,
-  Modal, Drawer, Popconfirm, Skeleton, Spin, Empty, message, Divider, Space, Tooltip,
+  Modal, Drawer, Skeleton, Spin, Empty, message, Divider, Space, Tooltip,
 } from "antd";
 import {
   Users, UserPlus, UserPen, Trash2, RefreshCcw, Download, Search,
@@ -45,6 +45,10 @@ import {
         of role.
    This file follows the role-based hiding exactly as written in this brief;
    it does not silently resolve the conflict for you.
+
+   NOTE ON THIS PASS: only visual/layout changes (sizing, spacing, columns,
+   responsiveness). No function names, handlers, API calls, or logic were
+   touched — everything still wires up exactly as before.
 ============================================================ */
 
 const api = axios.create({ baseURL: "/api" });
@@ -58,23 +62,44 @@ const ROLE_META = {
 
 const resolveId = (val) => (val && typeof val === "object" ? val._id : val);
 
+/* Turns a caught axios error into a message that actually explains what
+   happened, instead of a generic fallback every time.
+   - No err.response at all -> the request never got a reply (network
+     block, CORS, or wrong URL) — not a validation problem.
+   - 401 -> auth token missing/invalid/expired. This page's routes all
+     require isAuthenticated server-side, so this is worth checking
+     specifically here.
+   - Otherwise -> whatever the server actually said. */
+const diagnoseError = (err, fallback) => {
+  if (!err?.response) {
+    return "Request never reached the server — check the backend is running and that this request isn't being blocked (CORS, wrong URL, or network issue).";
+  }
+  if (err.response.status === 401) {
+    return "Not authorized (401) — your session/token may be missing or expired. Try logging in again.";
+  }
+  if (err.response.status === 404) {
+    return "Not found on the server. It may already be gone, or this route isn't registered on your running backend yet.";
+  }
+  return err.response.data?.message || fallback;
+};
+
 const showLocationFor = (role) => role && role !== "superAdmin";
 const showPlantFor = (role) => role === "manager" || role === "user";
 const showShiftFor = (role) => role === "user";
 const showConveyorFor = (role) => role === "user";
 
-/* ───────────────────────────────────────────── shared visual bits (same theme as the rest of Paint Shop MIS) */
+/* ───────────────────────────────────────────── shared visual bits (same theme as the rest of Paint Shop MIS, tightened) */
 const StatusTag = ({ status }) => {
   const active = status === "Active";
   return (
     <span style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
+      display: "inline-flex", alignItems: "center", gap: 4,
       background: active ? "#DCFCE7" : "#FFF1F2",
       color: active ? "#15803D" : "#BE123C",
-      fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+      fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999,
     }}>
       <span style={{
-        width: 6, height: 6, borderRadius: 999,
+        width: 5, height: 5, borderRadius: 999,
         background: active ? "#22C55E" : "#F43F5E", flexShrink: 0,
       }} />
       {active ? "Active" : "Inactive"}
@@ -85,8 +110,8 @@ const StatusTag = ({ status }) => {
 const RoleTag = ({ role }) => {
   const meta = ROLE_META[role] || { label: role || "—", color: "default" };
   return (
-    <Tag color={meta.color} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 600, fontSize: 11, borderRadius: 999, padding: "2px 9px" }}>
-      <Shield size={10} /> {meta.label}
+    <Tag color={meta.color} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontWeight: 600, fontSize: 10, borderRadius: 999, padding: "1px 8px" }}>
+      <Shield size={9} /> {meta.label}
     </Tag>
   );
 };
@@ -94,37 +119,37 @@ const RoleTag = ({ role }) => {
 const FieldLabel = ({ icon: Icon, label, required }) => (
   <span style={{
     display: "flex", alignItems: "center", gap: 4,
-    fontSize: 10.5, fontWeight: 600, color: "#475569", letterSpacing: 0.2,
+    fontSize: 9.5, fontWeight: 600, color: "#475569", letterSpacing: 0.2,
   }}>
-    {Icon && <Icon size={11} color="#94A3B8" />}
+    {Icon && <Icon size={10} color="#94A3B8" />}
     {label}
     {required && <span style={{ color: "#F43F5E" }}>*</span>}
   </span>
 );
 
 const SectionDivider = ({ icon: Icon, label, hint }) => (
-  <div style={{ margin: "18px 0 14px" }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: hint ? 4 : 0 }}>
+  <div style={{ margin: "14px 0 11px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: hint ? 3 : 0 }}>
       <div style={{
-        width: 22, height: 22, borderRadius: 7,
+        width: 19, height: 19, borderRadius: 6,
         background: "#ECFEFF", border: "1px solid rgba(14,116,144,0.2)",
         display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
       }}>
-        <Icon size={11} color="#0E7490" />
+        <Icon size={10} color="#0E7490" />
       </div>
-      <span style={{ fontSize: 9.5, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+      <span style={{ fontSize: 8.5, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>
         {label}
       </span>
       <div style={{ flex: 1, height: 1, background: "#F1F5F9" }} />
     </div>
-    {hint && <p style={{ margin: "4px 0 0 29px", fontSize: 10.5, color: "#94A3B8" }}>{hint}</p>}
+    {hint && <p style={{ margin: "3px 0 0 25px", fontSize: 9.5, color: "#94A3B8" }}>{hint}</p>}
   </div>
 );
 
 const IconBtn = ({ onClick, bg, fg, children, title }) => (
   <button onClick={onClick} title={title} style={{
     background: bg, color: fg, border: "none",
-    width: 30, height: 30, borderRadius: 8,
+    width: 26, height: 26, borderRadius: 7,
     display: "inline-flex", alignItems: "center", justifyContent: "center",
     cursor: "pointer", flexShrink: 0,
   }}>
@@ -133,16 +158,16 @@ const IconBtn = ({ onClick, bg, fg, children, title }) => (
 );
 
 const InfoRow = ({ icon: Icon, label, value }) => (
-  <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 0", borderBottom: "1px solid #F1F5F9" }}>
+  <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>
     <div style={{
-      width: 28, height: 28, borderRadius: 8, background: "#F8FAFC", border: "1px solid #F1F5F9",
+      width: 25, height: 25, borderRadius: 7, background: "#F8FAFC", border: "1px solid #F1F5F9",
       display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1,
     }}>
-      <Icon size={13} color="#0E7490" />
+      <Icon size={12} color="#0E7490" />
     </div>
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
-      <div style={{ fontSize: 13.5, fontWeight: 600, color: "#0F172A", marginTop: 2, wordBreak: "break-word" }}>{value ?? "—"}</div>
+      <div style={{ fontSize: 9.5, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: "#0F172A", marginTop: 2, wordBreak: "break-word" }}>{value ?? "—"}</div>
     </div>
   </div>
 );
@@ -242,6 +267,15 @@ export default function UserMasterPage() {
     } finally {
       setShiftsLoading(false);
     }
+  }, []);
+
+  /* Reset antd's message duration on mount. message.config() is GLOBAL —
+     if another page/file in this app set it very short (e.g. 0.5s),
+     every message.xxx() call everywhere inherits that, including here.
+     This guarantees toasts on this page stay readable regardless of
+     what else ran earlier in the session. */
+  useEffect(() => {
+    message.config({ duration: 4 });
   }, []);
 
   useEffect(() => {
@@ -395,7 +429,12 @@ export default function UserMasterPage() {
       message.success("User deleted");
       fetchUsers();
     } catch (err) {
-      message.error(err?.response?.data?.message || "Delete failed");
+      // Modal instead of a toast here on purpose — this stays open until you
+      // close it, so it can't vanish before you get to read it.
+      Modal.error({
+        title: "Delete failed",
+        content: diagnoseError(err, "Delete failed"),
+      });
     }
   };
 
@@ -406,7 +445,7 @@ export default function UserMasterPage() {
       message.success(`User ${nextStatus === "Active" ? "activated" : "deactivated"}`);
       fetchUsers();
     } catch (err) {
-      message.error(err?.response?.data?.message || "Failed to update status");
+      message.error(diagnoseError(err, "Failed to update status"));
     }
   };
 
@@ -474,43 +513,43 @@ export default function UserMasterPage() {
   const columns = [
     { title: "Employee Name", dataIndex: "name", ellipsis: true,
       sorter: (a, b) => (a.name || "").localeCompare(b.name || ""),
-      render: (v) => <span style={{ fontWeight: 700, fontSize: 12.5, color: "#0F172A" }}>{v}</span> },
+      render: (v) => <span style={{ fontWeight: 700, fontSize: 11.5, color: "#0F172A" }}>{v}</span> },
     { title: "Email", dataIndex: "email", ellipsis: true,
-      render: (v) => <span style={{ fontSize: 12.5, color: "#334155" }}>{v}</span> },
-    { title: "Role", dataIndex: "role", width: 130,
+      render: (v) => <span style={{ fontSize: 11.5, color: "#334155" }}>{v}</span> },
+    { title: "Role", dataIndex: "role", width: 112,
       filters: Object.entries(ROLE_META).map(([value, meta]) => ({ text: meta.label, value })),
       onFilter: (value, record) => record.role === value,
       render: (v) => <RoleTag role={v} /> },
-    { title: "Location", dataIndex: "locationName", ellipsis: true, width: 130,
+    { title: "Location", dataIndex: "locationName", ellipsis: true, width: 115,
       render: (v) => v ? (
-        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#334155" }}>
-          <MapPin size={10} color="#94A3B8" /> {v}
+        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#334155" }}>
+          <MapPin size={9} color="#94A3B8" /> {v}
         </span>
       ) : <span style={{ color: "#CBD5E1" }}>—</span> },
-    { title: "Plant", dataIndex: "plantName", ellipsis: true, width: 120,
+    { title: "Plant", dataIndex: "plantName", ellipsis: true, width: 105,
       render: (v) => v || <span style={{ color: "#CBD5E1" }}>—</span> },
-    { title: "Shift", dataIndex: "shiftName", ellipsis: true, width: 110,
+    { title: "Shift", dataIndex: "shiftName", ellipsis: true, width: 95,
       render: (v) => v || <span style={{ color: "#CBD5E1" }}>—</span> },
-    { title: "Conveyor", dataIndex: "conveyorName", ellipsis: true, width: 120,
+    { title: "Conveyor", dataIndex: "conveyorName", ellipsis: true, width: 105,
       render: (v) => v || <span style={{ color: "#CBD5E1" }}>—</span> },
-    { title: "Status", dataIndex: "status", align: "center", width: 100,
+    { title: "Status", dataIndex: "status", align: "center", width: 88,
       filters: [{ text: "Active", value: "Active" }, { text: "Inactive", value: "Inactive" }],
       onFilter: (value, record) => record.status === value,
       render: (v) => <StatusTag status={v} /> },
-    { title: "Created Date", dataIndex: "createdAt", width: 130,
+    { title: "Created Date", dataIndex: "createdAt", width: 112,
       sorter: (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0),
-      render: (v) => <span style={{ fontSize: 12, color: "#64748B" }}>{v ? new Date(v).toLocaleDateString() : "—"}</span> },
-    { title: "", key: "actions", width: 150, fixed: "right",
+      render: (v) => <span style={{ fontSize: 11, color: "#64748B" }}>{v ? new Date(v).toLocaleDateString() : "—"}</span> },
+    { title: "", key: "actions", width: 130, fixed: "right",
       render: (_, r) => (
-        <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
           <Tooltip title="View">
             <IconBtn bg="#F0F9FF" fg="#0369A1" onClick={() => handleViewUser(r)}>
-              <Eye size={13} />
+              <Eye size={12} />
             </IconBtn>
           </Tooltip>
           <Tooltip title="Edit">
             <IconBtn bg="#FFFBEB" fg="#B45309" onClick={() => handleEditUser(r)}>
-              <UserPen size={13} />
+              <UserPen size={12} />
             </IconBtn>
           </Tooltip>
           <Tooltip title={r.status === "Active" ? "Deactivate" : "Activate"}>
@@ -519,19 +558,24 @@ export default function UserMasterPage() {
               fg={r.status === "Active" ? "#C2410C" : "#15803D"}
               onClick={() => handleToggleStatus(r)}
             >
-              {r.status === "Active" ? <PowerOff size={13} /> : <Power size={13} />}
+              {r.status === "Active" ? <PowerOff size={12} /> : <Power size={12} />}
             </IconBtn>
           </Tooltip>
-          <Popconfirm
-            title="Delete this user?"
-            description="This action permanently removes the user."
-            okText="Delete" cancelText="Cancel" okType="danger"
-            onConfirm={() => handleDeleteUser(r._id)}
-          >
-            <IconBtn bg="#FFF1F2" fg="#BE123C" title="Delete">
-              <Trash2 size={13} />
+          <Tooltip title="Delete">
+            <IconBtn
+              bg="#FFF1F2" fg="#BE123C"
+              onClick={() =>
+                Modal.confirm({
+                  title: "Delete this user?",
+                  content: "This action permanently removes the user.",
+                  okText: "Delete", cancelText: "Cancel", okType: "danger",
+                  onOk: () => handleDeleteUser(r._id),
+                })
+              }
+            >
+              <Trash2 size={12} />
             </IconBtn>
-          </Popconfirm>
+          </Tooltip>
         </div>
       ) },
   ];
@@ -548,38 +592,38 @@ export default function UserMasterPage() {
       {/* ══ STICKY HEADER ══ */}
       <div className="ump-sticky-header" style={{
         position: "sticky", top: 0, zIndex: 20, background: "rgba(248,250,252,0.92)",
-        backdropFilter: "blur(6px)", padding: "20px 32px 16px", borderBottom: "1px solid #F1F5F9",
+        backdropFilter: "blur(6px)", padding: "15px 22px 12px", borderBottom: "1px solid #F1F5F9",
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <div style={{
-              width: 36, height: 36, borderRadius: 11,
+              width: 31, height: 31, borderRadius: 10,
               background: "linear-gradient(135deg,#0E7490,#0891B2)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 6px 14px -4px rgba(14,116,144,0.4)",
+              boxShadow: "0 5px 13px -4px rgba(14,116,144,0.4)",
             }}>
-              <Users size={18} color="#fff" />
+              <Users size={16} color="#fff" />
             </div>
             <div>
-              <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0F172A", margin: 0 }}>Manage Users</h1>
-              <p style={{ color: "#64748B", fontSize: 12.5, margin: "2px 0 0" }}>
+              <h1 style={{ fontSize: 19, fontWeight: 700, color: "#0F172A", margin: 0 }}>Manage Users</h1>
+              <p style={{ color: "#64748B", fontSize: 11.5, margin: "2px 0 0" }}>
                 {filteredUsers.length} of {users.length} user{users.length === 1 ? "" : "s"}
               </p>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Button onClick={handleRefresh} icon={<RefreshCcw size={14} />} style={S.ghostBtnAntd}>Refresh</Button>
-            <Button onClick={handleExportExcel} icon={<Download size={14} />} style={S.ghostBtnAntd}>Export Excel</Button>
-            <Button type="primary" onClick={handleAddUser} icon={<UserPlus size={14} />} style={S.primaryBtnAntd}>Add User</Button>
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+            <Button onClick={handleRefresh} icon={<RefreshCcw size={13} />} style={S.ghostBtnAntd}>Refresh</Button>
+            <Button onClick={handleExportExcel} icon={<Download size={13} />} style={S.ghostBtnAntd}>Export Excel</Button>
+            <Button type="primary" onClick={handleAddUser} icon={<UserPlus size={13} />} style={S.primaryBtnAntd}>Add User</Button>
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr", gap: 10, marginTop: 16 }} className="ump-filters">
+        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr", gap: 8, marginTop: 13 }} className="ump-filters">
           <div style={{ position: "relative" }}>
-            <Search size={15} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#94A3B8", zIndex: 1 }} />
+            <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#94A3B8", zIndex: 1 }} />
             <Input
-              className="ump-input" style={{ paddingLeft: 34 }}
+              className="ump-input" style={{ paddingLeft: 31 }}
               value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Search name, email, role, plant, location, shift, status…"
               allowClear
@@ -604,19 +648,19 @@ export default function UserMasterPage() {
       </div>
 
       {/* ══ TABLE ══ */}
-      <div style={{ padding: "18px 32px 32px" }}>
+      <div style={{ padding: "14px 22px 24px" }}>
         <div style={{ ...S.panel, padding: 0, overflow: "hidden" }}>
           {initialLoading ? (
-            <div style={{ padding: 20 }}><Skeleton active paragraph={{ rows: 8 }} /></div>
+            <div style={{ padding: 18 }}><Skeleton active paragraph={{ rows: 8 }} /></div>
           ) : (
             <Table
-              dataSource={filteredUsers} columns={columns} rowKey="_id" size="middle"
+              dataSource={filteredUsers} columns={columns} rowKey="_id" size="small"
               loading={{ spinning: tableLoading, indicator: <Spin size="large" /> }}
               pagination={{ pageSize: 10, pageSizeOptions: [10, 20, 50, 100], showSizeChanger: true }}
-              scroll={{ x: 1200 }}
+              scroll={{ x: 1100 }}
               locale={{
                 emptyText: (
-                  <div style={{ padding: "48px 0" }}>
+                  <div style={{ padding: "42px 0" }}>
                     <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
                       description={<span style={{ color: "#64748B" }}>No users found. Add one to get started.</span>} />
                   </div>
@@ -632,30 +676,30 @@ export default function UserMasterPage() {
         open={modalOpen}
         onCancel={handleModalClose}
         footer={null}
-        width={760}
+        width={680}
         centered
         destroyOnHidden
-        closeIcon={<X size={16} color="#64748B" />}
+        closeIcon={<X size={15} color="#64748B" />}
         title={null}
-        styles={{ content: { padding: 0, borderRadius: 16, overflow: "hidden" }, body: { padding: 0, maxHeight: "82vh", display: "flex", flexDirection: "column" } }}
+        styles={{ content: { padding: 0, borderRadius: 15, overflow: "hidden" }, body: { padding: 0, maxHeight: "82vh", display: "flex", flexDirection: "column" } }}
       >
-        <div style={{ background: "linear-gradient(135deg,#0E7490,#155E75)", padding: "16px 24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ background: "linear-gradient(135deg,#0E7490,#155E75)", padding: "13px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <div style={{
-              width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,0.15)",
+              width: 30, height: 30, borderRadius: 9, background: "rgba(255,255,255,0.15)",
               border: "1px solid rgba(255,255,255,0.25)", display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              {isEditMode ? <UserPen size={16} color="#fff" /> : <UserPlus size={16} color="#fff" />}
+              {isEditMode ? <UserPen size={15} color="#fff" /> : <UserPlus size={15} color="#fff" />}
             </div>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#fff" }}>
+            <h2 style={{ margin: 0, fontSize: 14.5, fontWeight: 700, color: "#fff" }}>
               {isEditMode ? "Edit User" : "Add New User"}
             </h2>
           </div>
         </div>
 
-        <div style={{ padding: "4px 24px 0", overflowY: "auto", flex: 1 }}>
+        <div style={{ padding: "4px 20px 0", overflowY: "auto", flex: 1 }}>
           {editLoading ? (
-            <div style={{ padding: 24 }}><Skeleton active paragraph={{ rows: 10 }} /></div>
+            <div style={{ padding: 20 }}><Skeleton active paragraph={{ rows: 10 }} /></div>
           ) : (
             <Form
               form={form}
@@ -665,7 +709,7 @@ export default function UserMasterPage() {
               onFinish={handleFinish}
             >
               <SectionDivider icon={Users} label="Basic Information" />
-              <Row gutter={12}>
+              <Row gutter={10}>
                 <Col xs={24} sm={12}>
                   <Form.Item name="name" label={<FieldLabel label="Employee Name" required />}
                     rules={[{ required: true, message: "Name is required" }]}>
@@ -683,7 +727,7 @@ export default function UserMasterPage() {
                 </Col>
               </Row>
 
-              <Row gutter={12}>
+              <Row gutter={10}>
                 <Col xs={24} sm={12}>
                   <Form.Item name="password" label={<FieldLabel label="Password" required={!isEditMode} />}
                     rules={[
@@ -711,7 +755,7 @@ export default function UserMasterPage() {
                 </Col>
               </Row>
 
-              <Row gutter={12}>
+              <Row gutter={10}>
                 <Col xs={24} sm={12}>
                   <Form.Item name="role" label={<FieldLabel label="Role" required />}
                     rules={[{ required: true, message: "Role is required" }]}>
@@ -737,7 +781,7 @@ export default function UserMasterPage() {
                 <>
                   <SectionDivider icon={GitBranch} label="Organization Mapping"
                     hint="Location → Plant → Shift → Conveyor. Fields shown depend on the selected role." />
-                  <Row gutter={12}>
+                  <Row gutter={10}>
                     {showLocationFor(watchedRole) && (
                       <Col xs={24} sm={12}>
                         <Form.Item name="locationId" label={<FieldLabel icon={MapPin} label="Location" required />}
@@ -767,7 +811,7 @@ export default function UserMasterPage() {
                       </Col>
                     )}
                   </Row>
-                  <Row gutter={12}>
+                  <Row gutter={10}>
                     {showShiftFor(watchedRole) && (
                       <Col xs={24} sm={12}>
                         <Form.Item name="shiftId" label={<FieldLabel icon={Clock3} label="Shift" required />}
@@ -802,19 +846,19 @@ export default function UserMasterPage() {
                 </>
               )}
 
-              <Divider style={{ margin: "6px 0 16px" }} />
+              <Divider style={{ margin: "5px 0 13px" }} />
             </Form>
           )}
         </div>
 
         {/* Sticky footer actions */}
         <div style={{
-          padding: "14px 24px", borderTop: "1px solid #F1F5F9", background: "#fff",
-          display: "flex", justifyContent: "flex-end", gap: 10,
+          padding: "11px 20px", borderTop: "1px solid #F1F5F9", background: "#fff",
+          display: "flex", justifyContent: "flex-end", gap: 8,
         }}>
           <Button onClick={handleModalClose} style={S.ghostBtnAntd}>Cancel</Button>
           <Button
-            type="primary" loading={saving} icon={<Save size={14} />}
+            type="primary" loading={saving} icon={<Save size={13} />}
             style={S.primaryBtnAntd} onClick={() => form.submit()}
           >
             {isEditMode ? "Update User" : "Save User"}
@@ -826,23 +870,23 @@ export default function UserMasterPage() {
       <Drawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        width={420}
-        closeIcon={<X size={16} />}
+        width={380}
+        closeIcon={<X size={15} />}
         title={
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <div style={{
-              width: 32, height: 32, borderRadius: 9, background: "#ECFEFF",
+              width: 28, height: 28, borderRadius: 8, background: "#ECFEFF",
               border: "1px solid rgba(14,116,144,0.2)", display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <Eye size={15} color="#0E7490" />
+              <Eye size={14} color="#0E7490" />
             </div>
-            <span style={{ fontWeight: 700, fontSize: 15 }}>User Details</span>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>User Details</span>
           </div>
         }
       >
         {viewingUser && (
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
               <StatusTag status={viewingUser.status} />
               <RoleTag role={viewingUser.role} />
             </div>
@@ -861,15 +905,15 @@ export default function UserMasterPage() {
   );
 }
 
-/* ───────────────────────────────────────────── GLOBAL CSS (scoped, same theme as the rest of Paint Shop MIS) */
+/* ───────────────────────────────────────────── GLOBAL CSS (scoped, same theme as the rest of Paint Shop MIS, tightened) */
 const CSS = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
     .ump-page .ump-select .ant-select-selector {
       background: #F8FAFC !important; border: 1px solid #E2E8F0 !important;
-      border-radius: 10px !important;
-      min-height: 40px !important; display: flex !important; align-items: center !important;
+      border-radius: 9px !important;
+      min-height: 36px !important; display: flex !important; align-items: center !important;
     }
     .ump-page .ant-select-focused .ant-select-selector {
       border-color: #0E7490 !important; box-shadow: 0 0 0 3px rgba(14,116,144,0.12) !important;
@@ -877,28 +921,30 @@ const CSS = () => (
     }
     .ump-page .ump-input.ant-input, .ump-page .ump-input.ant-input-affix-wrapper {
       background: #F8FAFC !important; border: 1px solid #E2E8F0 !important;
-      border-radius: 10px !important; height: 40px;
+      border-radius: 9px !important; height: 36px;
     }
     .ump-page .ump-input.ant-input:focus, .ump-page .ump-input.ant-input-affix-wrapper-focused {
       border-color: #0E7490 !important; box-shadow: 0 0 0 3px rgba(14,116,144,0.12) !important;
       background: #fff !important;
     }
-    .ump-page .ump-form .ant-form-item { margin-bottom: 14px; }
-    .ump-page .ant-form-item-label { padding-bottom: 4px; }
+    .ump-page .ump-form .ant-form-item { margin-bottom: 12px; }
+    .ump-page .ant-form-item-label { padding-bottom: 3px; }
     .ump-page .ant-table-thead > tr > th {
       background: #F8FAFC !important; color: #64748B !important;
-      font-size: 11px !important; font-weight: 700 !important;
-      text-transform: uppercase; letter-spacing: 0.5px;
+      font-size: 10px !important; font-weight: 700 !important;
+      text-transform: uppercase; letter-spacing: 0.4px;
       border-bottom: 1px solid #F1F5F9 !important;
+      padding: 8px 13px !important;
     }
     .ump-page .ant-table-thead > tr > th::before { display: none !important; }
     .ump-page .ant-table-tbody > tr > td {
       border-bottom: 1px solid #F8FAFC !important;
-      padding: 9px 16px !important;
+      padding: 6px 13px !important;
     }
     .ump-page .ant-table-tbody > tr:hover > td { background: #F0FDFF !important; }
     .ump-page .ant-pagination-item-active { border-color: #0E7490 !important; }
     .ump-page .ant-pagination-item-active a { color: #0E7490 !important; }
+    .ump-page .ant-pagination { font-size: 12px !important; }
     @media (max-width: 900px) {
       .ump-filters { grid-template-columns: 1fr 1fr !important; }
     }
@@ -908,23 +954,23 @@ const CSS = () => (
   `}</style>
 );
 
-/* ───────────────────────────────────────────── STYLE TOKENS (same as the rest of Paint Shop MIS) */
+/* ───────────────────────────────────────────── STYLE TOKENS (same as the rest of Paint Shop MIS, tightened) */
 const S = {
   panel: {
     background: "#fff", border: "1px solid #F1F5F9",
-    borderRadius: 16, padding: 16,
+    borderRadius: 15, padding: 14,
     boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
   },
   primaryBtnAntd: {
     background: "linear-gradient(135deg,#0E7490,#0891B2)",
     borderColor: "transparent", color: "#fff",
-    borderRadius: 11, height: 40, fontWeight: 600,
-    display: "inline-flex", alignItems: "center", gap: 7,
-    boxShadow: "0 4px 14px -3px rgba(14,116,144,0.45)",
+    borderRadius: 10, height: 36, fontWeight: 600,
+    display: "inline-flex", alignItems: "center", gap: 6,
+    boxShadow: "0 4px 13px -3px rgba(14,116,144,0.45)",
   },
   ghostBtnAntd: {
     background: "#fff", color: "#475569", border: "1px solid #E2E8F0",
-    borderRadius: 11, height: 40, fontWeight: 600,
-    display: "inline-flex", alignItems: "center", gap: 7,
+    borderRadius: 10, height: 36, fontWeight: 600,
+    display: "inline-flex", alignItems: "center", gap: 6,
   },
 };

@@ -58,6 +58,12 @@ export const authenticateMe = async (req, res) => {
       const user = await User.findById( req.user.id)
       .populate("plantId", "plantName location")
       .select("-password");
+      console.log("LOGIN USER =", {
+        role: user.role,
+        locationId: user.locationId,
+        plantId: user.plantId,
+        shiftId: user.shiftId,
+      });
 
       if (!user) {
         return res.status(404).json({

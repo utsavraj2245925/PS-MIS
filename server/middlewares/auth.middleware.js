@@ -31,9 +31,10 @@ export const verifyToken = async (
       );
 
     const user =
-      await User.findById(
-        decoded.id
-      );
+      await User.findById(decoded.id)
+        .populate("locationId")
+        .populate("plantId")
+        .populate("shiftId");
 
     if (!user) {
       return res.status(401).json({
@@ -44,14 +45,25 @@ export const verifyToken = async (
 
     req.user = user;
 
+    console.log("AUTH USER =", {
+      role: user.role,
+      locationId: user.locationId?._id,
+      plantId: user.plantId?._id,
+      shiftId: user.shiftId?._id,
+    });
+
     next();
 
   } catch (error) {
 
+    console.log(
+      "VERIFY TOKEN ERROR =",
+      error.message
+    );
+
     return res.status(401).json({
       success: false,
-      message: "Invalid token",
+      message: error.message,
     });
-
   }
 };
