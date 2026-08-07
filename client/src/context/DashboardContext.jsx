@@ -16,6 +16,10 @@ export const DashboardProvider = ({ children }) => {
   const [cards, setCards] = useState({});
   const [loading, setLoading] = useState(true);
 
+  const [productionTrend, setProductionTrend] = useState([]);
+  const [achievementTrend, setAchievementTrend] = useState([]);
+  const [trendLoading, setTrendLoading] = useState(true);
+
   const [datePreset, setDatePreset] = useState("today");
   const [dateRange, setDateRange] = useState(() => DATE_PRESETS.find((p) => p.key === "today").range());
 
@@ -77,11 +81,39 @@ export const DashboardProvider = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
 
+  const fetchTrends = useCallback(async () => {
+    setTrendLoading(true);
+    try {
+      const params = {
+        locationId: filters.locationId,
+        plantId: filters.plantId,
+        shiftId: filters.shiftId,
+        conveyorId: filters.conveyorId,
+        fromDate: dateRange[0]?.startOf("day").toISOString(),
+        toDate: dateRange[1]?.endOf("day").toISOString(),
+      };
+
+      const [productionRes, achievementRes] = await Promise.all([
+        axiosInstance.get("/dashboard/production-trend", { params }),
+        axiosInstance.get("/dashboard/achievement-trend", { params }),
+      ]);
+
+      setProductionTrend(productionRes.data.data || []);
+      setAchievementTrend(achievementRes.data.data || []);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setTrendLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
   useEffect(() => { if (user) fetchFilters(); }, [user, fetchFilters]);
 
   useEffect(() => {
     if (!user) return;
     fetchSummary();
+    fetchTrends();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange[0]?.valueOf(), dateRange[1]?.valueOf()]);
 
@@ -91,6 +123,7 @@ export const DashboardProvider = ({ children }) => {
         filters, setFilters, locations, plants, shifts, conveyors,
         cards, loading, datePreset, dateRange,
         onPresetChange, onCustomRangeChange, onRefresh: fetchSummary,
+        productionTrend, achievementTrend, trendLoading,
       }}
     >
       {children}

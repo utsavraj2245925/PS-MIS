@@ -26,7 +26,7 @@ export default function DashboardLayout({ children }) {
         >
           <Navbar collapsed={collapsed} />
 
-          <main className={`${showFilterRow ? "pt-[116px]" : "pt-[60px]"} px-[14px] pb-[14px] lg:px-[20px]`}>
+          <main className={`${showFilterRow ? "pt-[124px]" : "pt-[60px]"} px-[14px] pb-[14px] lg:px-[20px]`}>
             <div className="w-full overflow-x-auto">{children}</div>
           </main>
         </div>

@@ -3,6 +3,11 @@ import Location from "../models/location.model.js";
 import Shift from "../models/shift.model.js";
 import { dashboardSummaryService }
 from "../services/dashboard.service.js";
+////
+import {
+  getProductionTrend as getProductionTrendService,
+  getAchievementTrend as getAchievementTrendService,
+} from "../services/dashboard/productionTrend.service.js";
 
 const extractConveyors = (plants = []) => {
   const conveyors = [];
@@ -155,5 +160,53 @@ export const getFilterOptions = async (req, res) => {
       message: "Failed to load filters",
     });
 
+  }
+};
+// add these two exports at the bottom of the file
+export const getProductionTrend = async (req, res) => {
+  try {
+    const filters = {
+      fromDate: req.query.fromDate,
+      toDate: req.query.toDate,
+      shiftId: req.query.shiftId,
+      plantId: req.query.plantId,
+      locationId: req.query.locationId,
+      conveyorId: req.query.conveyorId,
+    };
+
+    const data = await getProductionTrendService(req.user, filters);
+
+    return res.status(200).json({
+      success: true,
+      message: "Production trend fetched successfully",
+      data,
+    });
+  } catch (error) {
+    console.error("PRODUCTION TREND ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch production trend" });
+  }
+};
+
+export const getAchievementTrend = async (req, res) => {
+  try {
+    const filters = {
+      fromDate: req.query.fromDate,
+      toDate: req.query.toDate,
+      shiftId: req.query.shiftId,
+      plantId: req.query.plantId,
+      locationId: req.query.locationId,
+      conveyorId: req.query.conveyorId,
+    };
+
+    const data = await getAchievementTrendService(req.user, filters);
+
+    return res.status(200).json({
+      success: true,
+      message: "Achievement trend fetched successfully",
+      data,
+    });
+  } catch (error) {
+    console.error("ACHIEVEMENT TREND ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch achievement trend" });
   }
 };
