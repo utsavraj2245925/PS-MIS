@@ -4,6 +4,22 @@ import Shift from "../models/shift.model.js";
 import { dashboardSummaryService }
 from "../services/dashboard.service.js";
 
+const extractConveyors = (plants = []) => {
+  const conveyors = [];
+  for (const plant of plants) {
+    for (const conveyor of plant.conveyors || []) {
+      if (conveyor.status === "Active") {
+        conveyors.push({
+          _id: conveyor._id,
+          conveyorName: conveyor.conveyorName,
+          plantId: plant._id,
+        });
+      }
+    }
+  }
+  return conveyors;
+};
+
 export const getDashboardSummary =
   async (req, res) => {
     try {
@@ -14,6 +30,7 @@ export const getDashboardSummary =
         shiftId: req.query.shiftId,
         plantId: req.query.plantId,
         locationId: req.query.locationId,
+        conveyorId: req.query.conveyorId,
       };
 
       const data =
@@ -54,8 +71,9 @@ export const getFilterOptions = async (req, res) => {
     let locations = [];
     let plants = [];
     let shifts = [];
+    let conveyors = [];
 
-    // SUPER ADMIN — sees All Locations, All Plants, All Shifts
+    // SUPER ADMIN — sees All Locations, All Plants, All Shifts, All Conveyors
     if (user.role === "superAdmin") {
 
       locations = await Location.find({ status: "Active" })
@@ -63,23 +81,28 @@ export const getFilterOptions = async (req, res) => {
         .lean();
 
       plants = await Plant.find({ status: "Active" })
-        .select("_id plantName locationId")
+        .select("_id plantName locationId conveyors")
         .lean();
 
       shifts = await Shift.find({ status: "Active" })
         .select("_id shiftName plantId")
         .lean();
+
+      conveyors = extractConveyors(plants);
     }
 
-    // PLANT ADMIN — pinned to Own Location; sees All Plants under it,
-    // and All Shifts under those plants. (plantAdmin's own `plantId` is
-    // null in the DB — the previous version queried Plant.find({_id: null})
-    // which always returned empty, that's why plants/shifts were blank.)
+    // PLANT ADMIN — pinned to own location; sees all plants, shifts, conveyors under it
     else if (user.role === "plantAdmin") {
 
       if (userLocationId) {
+        const location = await Location.findById(userLocationId)
+          .select("_id locationName")
+          .lean();
+
+        if (location) locations = [location];
+
         plants = await Plant.find({ locationId: userLocationId, status: "Active" })
-          .select("_id plantName locationId")
+          .select("_id plantName locationId conveyors")
           .lean();
 
         const plantIds = plants.map((p) => p._id);
@@ -87,22 +110,31 @@ export const getFilterOptions = async (req, res) => {
         shifts = await Shift.find({ plantId: { $in: plantIds }, status: "Active" })
           .select("_id shiftName plantId")
           .lean();
+
+        conveyors = extractConveyors(plants);
       }
     }
 
-    // MANAGER — pinned to Own Plant; sees All Shifts of that plant.
-    // (manager's own `shiftId` is null — the previous version queried
-    // Shift.find({_id: null}) which always returned empty.)
+    // MANAGER — pinned to own plant; sees all shifts and conveyors of that plant
     else if (user.role === "manager") {
 
       if (userPlantId) {
+        const plant = await Plant.findOne({ _id: userPlantId, status: "Active" })
+          .select("_id plantName locationId conveyors")
+          .lean();
+
+        if (plant) {
+          plants = [plant];
+          conveyors = extractConveyors(plants);
+        }
+
         shifts = await Shift.find({ plantId: userPlantId, status: "Active" })
           .select("_id shiftName plantId")
           .lean();
       }
     }
 
-    // USER — no filters at all; arrays stay empty.
+    // USER — no filters; arrays stay empty.
 
     return res.status(200).json({
       success: true,
@@ -110,6 +142,7 @@ export const getFilterOptions = async (req, res) => {
         locations,
         plants,
         shifts,
+        conveyors,
       },
     });
 

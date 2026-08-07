@@ -3,29 +3,60 @@ import Plant from "../../models/plants.model.js";
 import Shift from "../../models/shift.model.js";
 import Part from "../../models/parts.model.js";
 import ConveyorStrength from "../../models/ConveyorStrength.model.js";
+import User from "../../models/users.model.js";
 
 const sum = (arr, key) => arr.reduce((total, item) => total + Number(item[key] || 0), 0);
 
 export const getSummary = async (user, filters = {}) => {
   try {
-    const { fromDate, toDate, plantId, locationId, shiftId } = filters;
+    const { fromDate, toDate, plantId, locationId, shiftId, conveyorId } = filters;
 
-    // Always pull the raw ObjectId out of the populated doc — never pass
-    // user.locationId / user.plantId / user.shiftId directly into a Mongo
-    // filter, since verifyToken populates them into full documents.
     const userLocationId = user.locationId?._id || user.locationId || null;
     const userPlantId    = user.plantId?._id || user.plantId || null;
     const userShiftId    = user.shiftId?._id || user.shiftId || null;
+    const userConveyorId = user.conveyorId?._id || user.conveyorId || null;
 
-    console.log("SUMMARY USER =", { role: user.role, locationId: userLocationId, plantId: userPlantId, shiftId: userShiftId });
+    console.log("SUMMARY USER =", {
+      role: user.role,
+      locationId: userLocationId,
+      plantId: userPlantId,
+      shiftId: userShiftId,
+      conveyorId: userConveyorId,
+    });
 
-    /* ============================== DATE FILTER ============================== */
-    const query = {};
-    if (fromDate || toDate) {
-      query.entryDate = {};
-      if (fromDate) query.entryDate.$gte = new Date(fromDate);
-      if (toDate) query.entryDate.$lte = new Date(toDate);
-    }
+    /* ============================== DATE FILTER ==============================
+       toDate is normalized to end-of-day (23:59:59.999) here as a safety
+       net — even if a caller ever sends a bare date instead of a full
+       start/end-of-day ISO timestamp, a same-day range (e.g. "Today")
+       still includes every entry from that day instead of excluding
+       anything created after midnight of whatever the raw timestamp was. */
+        const query = {};
+        if (fromDate || toDate) {
+          query.entryDate = {};
+          if (fromDate) {
+            const start = new Date(fromDate);
+            start.setHours(0, 0, 0, 0);
+            query.entryDate.$gte = start;
+          }
+          if (toDate) {
+            const end = new Date(toDate);
+            end.setHours(23, 59, 59, 999);
+            query.entryDate.$lte = end;
+          }
+        }
+
+    /* ============================== DAYS IN RANGE ==============================
+       ConveyorStrength's demandPerShift / availableTime / effectiveHangerPerShift
+       are PER-SHIFT (one day's capacity) values, not totals — multiply by how
+       many days the selected Date Range spans so Target (and anything derived
+       from it) scales with the filter instead of always showing one day's worth. */
+          let daysInRange = 1;
+          if (fromDate && toDate) {
+            const startDateOnly = new Date(fromDate); startDateOnly.setHours(0, 0, 0, 0);
+            const endDateOnly = new Date(toDate); endDateOnly.setHours(0, 0, 0, 0);
+            const diffDays = Math.round((endDateOnly - startDateOnly) / 86400000) + 1;
+            daysInRange = Math.max(diffDays, 1);
+          }
 
     /* ============================== ROLE BASED ACCESS ==============================
        ProductionEntry is only ever filtered by plantId/shiftId — never locationId,
@@ -33,19 +64,16 @@ export const getSummary = async (user, filters = {}) => {
        resolved to "which plants are under this location" first. */
 
     if (user.role === "user") {
-      // fully pinned — no filter selection applies
       if (userPlantId) query.plantId = userPlantId;
       if (userShiftId) query.shiftId = userShiftId;
     }
 
     else if (user.role === "manager") {
-      // pinned to own plant; shift is selectable among that plant's shifts
       if (userPlantId) query.plantId = userPlantId;
       if (shiftId) query.shiftId = shiftId;
     }
 
     else if (user.role === "plantAdmin") {
-      // pinned to own location; plant + shift are selectable within it
       if (plantId) {
         query.plantId = plantId;
       } else if (userLocationId) {
@@ -56,7 +84,6 @@ export const getSummary = async (user, filters = {}) => {
     }
 
     else if (user.role === "superAdmin") {
-      // fully open — everything comes from the selected filters
       if (plantId) {
         query.plantId = plantId;
       } else if (locationId) {
@@ -64,6 +91,20 @@ export const getSummary = async (user, filters = {}) => {
         query.plantId = { $in: plants.map((p) => p._id) };
       }
       if (shiftId) query.shiftId = shiftId;
+    }
+
+    /* ============================== CONVEYOR FILTER (ProductionEntry) ==============================
+       ProductionEntry has no top-level conveyorId — entries are created by users assigned
+       to a conveyor. Filter by reportedBy users matching the selected conveyor. */
+    const effectiveConveyorId =
+      user.role === "user" ? userConveyorId : (conveyorId || null);
+
+    if (effectiveConveyorId) {
+      const userFilter = { conveyorId: effectiveConveyorId, status: "Active", role: "user" };
+      if (query.plantId) userFilter.plantId = query.plantId;
+
+      const conveyorUsers = await User.find(userFilter).select("_id").lean();
+      query.reportedBy = { $in: conveyorUsers.map((u) => u._id) };
     }
 
     /* ============================== FETCH DATA ============================== */
@@ -106,12 +147,17 @@ export const getSummary = async (user, filters = {}) => {
     else if (user.role === "user") {
       if (userPlantId) strengthFilter.plantId = userPlantId;
       if (userShiftId) strengthFilter.shiftId = userShiftId;
+      if (userConveyorId) strengthFilter.conveyorId = userConveyorId;
+    }
+
+    if (effectiveConveyorId && user.role !== "user") {
+      strengthFilter.conveyorId = effectiveConveyorId;
     }
 
     const strengths = await ConveyorStrength.find(strengthFilter).lean();
     console.log("CONVEYOR COUNT =", strengths.length);
 
-    const target = strengths.reduce((sum, item) => sum + Number(item.demandPerShift || 0), 0);
+    const target = strengths.reduce((sum, item) => sum + Number(item.demandPerShift || 0), 0) * daysInRange;
     const achievement = target > 0 ? Number(((production / target) * 100).toFixed(2)) : 0;
 
     /* ============================== REJECT / REWORK ============================== */
@@ -126,7 +172,7 @@ export const getSummary = async (user, filters = {}) => {
 
     /* ============================== DOWNTIME + PERFORMANCE ============================== */
     const downtime = sum(entries, "totalDowntime");
-    const availableTime = strengths.reduce((sum, item) => sum + Number(item.availableTime || 0), 0);
+    const availableTime = strengths.reduce((sum, item) => sum + Number(item.availableTime || 0), 0) * daysInRange;
     const operatingTime = availableTime - downtime;
     const availability = availableTime > 0 ? Number(((operatingTime / availableTime) * 100).toFixed(2)) : 0;
     const performance = target > 0 ? Number(((production / target) * 100).toFixed(2)) : 0;
@@ -161,7 +207,7 @@ export const getSummary = async (user, filters = {}) => {
       });
     });
 
-    const effectiveHangers = strengths.reduce((total, item) => total + Number(item.effectiveHangerPerShift || 0), 0);
+    const effectiveHangers = strengths.reduce((total, item) => total + Number(item.effectiveHangerPerShift || 0), 0) * daysInRange;
     const hangerUtilization = effectiveHangers > 0 ? Number(((usedHangers / effectiveHangers) * 100).toFixed(2)) : 0;
 
     /* ============================== OEE ============================== */

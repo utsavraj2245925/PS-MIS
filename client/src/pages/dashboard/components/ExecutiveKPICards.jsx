@@ -1,213 +1,56 @@
 import React from "react";
-import { Row, Col } from "antd";
+import {
+  Target, Package, Gauge, CheckCircle2, TrendingUp, Zap,
+  Ruler, ShieldAlert, RotateCcw, Clock3, Users, Layers,
+} from "lucide-react";
 import KPICard from "./KPICard";
 
+const getTone = (value, mode) => {
+  const v = Number(value || 0);
+  if (mode === "highIsGood") {
+    if (v >= 90) return "green";
+    if (v >= 75) return "amber";
+    return "red";
+  }
+  if (mode === "lowIsGood") {
+    if (v <= 3) return "green";
+    if (v <= 8) return "amber";
+    return "red";
+  }
+  return "slate";
+};
+
+const formatPaintedArea = (value) => {
+  const area = Number(value || 0);
+  if (area >= 1000000) return `${(area / 1000000).toFixed(1)}M`;
+  if (area >= 1000) return `${(area / 1000).toFixed(1)}K`;
+  return area.toFixed(1);
+};
+
 const ExecutiveKPICards = ({ cards = {} }) => {
-    const getColor = (value, type) => {
-
-    if(type === "achievement"){
-      if(value >= 95) return "#16a34a";
-      if(value >= 80) return "#f59e0b";
-      return "#ef4444";
-    }
-
-    if(type === "oee"){
-      if(value >= 85) return "#16a34a";
-      if(value >= 60) return "#f59e0b";
-      return "#ef4444";
-    }
-
-    if(type === "quality"){
-      if(value >= 98) return "#16a34a";
-      if(value >= 95) return "#f59e0b";
-      return "#ef4444";
-    }
-
-    if(type === "availability"){
-      if(value >= 90) return "#16a34a";
-      if(value >= 80) return "#f59e0b";
-      return "#ef4444";
-    }
-
-    if(type === "reject"){
-      if(value <= 2) return "#16a34a";
-      if(value <= 5) return "#f59e0b";
-      return "#ef4444";
-    }
-
-    if(type === "rework"){
-      if(value <= 2) return "#16a34a";
-      if(value <= 5) return "#f59e0b";
-      return "#ef4444";
-    }
-
-    return "#1677ff";
-  };
-  
-  const formatPaintedArea = (value) => {
-    const area = Number(value || 0);
-
-    if (area >= 1000000) {
-      return `${(area / 1000000).toFixed(1)}M`;
-    }
-
-    if (area >= 1000) {
-      return `${(area / 1000).toFixed(1)}K`;
-    }
-
-    return area.toFixed(1);
-  };
-
-  const commonCol = {
-    xs: 24,
-    sm: 12,
-    md: 8,
-    lg: 6,
-    xl: 3,
-  };
+  const items = [
+    { icon: Target,        label: "Target",             value: (cards.target || 0).toLocaleString(),      tone: "teal" },
+    { icon: Package,       label: "Produced",            value: (cards.production || 0).toLocaleString(),  tone: "blue" },
+    { icon: Gauge,         label: "OEE",                 value: cards.oee || 0,          suffix: "%",      tone: getTone(cards.oee, "highIsGood") },
+    { icon: Zap,           label: "Availability",        value: cards.availability || 0, suffix: "%",      tone: getTone(cards.availability, "highIsGood") },
+    { icon: CheckCircle2,  label: "Quality",             value: cards.quality || 0,      suffix: "%",      tone: getTone(cards.quality, "highIsGood") },
+    { icon: TrendingUp,    label: "Performance",         value: cards.performance || 0,  suffix: "%",      tone: getTone(cards.performance, "highIsGood") },
+    { icon: Ruler,         label: "Painted Area",        value: formatPaintedArea(cards.paintedArea), suffix: ` ${cards.paintedAreaUnit || "m²"}`, tone: "cyan" },
+    { icon: ShieldAlert,   label: "Reject",              value: cards.rejectPercent || 0, suffix: "%",     tone: getTone(cards.rejectPercent, "lowIsGood") },
+    { icon: RotateCcw,     label: "Rework",              value: cards.reworkPercent || 0, suffix: "%",     tone: getTone(cards.reworkPercent, "lowIsGood") },
+    { icon: Clock3,        label: "Downtime",            value: cards.downtime || 0,      suffix: " min",  tone: Number(cards.downtime) > 0 ? "amber" : "green" },
+    { icon: Users,         label: "Short Manpower",      value: cards.shortManpower || 0, tone: Number(cards.shortManpower) > 0 ? "red" : "green" },
+    { icon: TrendingUp,    label: "Production Rate",     value: cards.productionRate || 0, suffix: "/hr",  tone: "blue" },
+    { icon: Layers,        label: "Hanger Utilization",  value: cards.hangerUtilization || 0, suffix: "%", tone: getTone(cards.hangerUtilization, "highIsGood") },
+  ];
 
   return (
-    <>
-      {/* ROW 1 */}
-
-      <Row gutter={[12, 12]}>
-        <Col {...commonCol}>
-          <KPICard
-            title="Target"
-            value={cards.target || 0}
-            color="#722ed1"
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="Production"
-            value={cards.production || 0}
-            color="#1677ff"
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-          title="Achievement %"
-          value={cards.achievement || 0}
-          color={getColor(cards.achievement,"achievement")}
-          suffix="%"
-          type="achievement"
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="Hanger Utilization %"
-            value={cards.hangerUtilization || 0}
-            suffix="%"
-            color="#fa8c16"
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="OEE"
-            value={cards.oee || 0}
-            suffix="%"
-            color={getColor(cards.oee,"oee")}
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="Quality"
-            value={cards.quality || 0}
-            suffix="%"
-            color={getColor(cards.quality,"quality")}
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="Availability"
-            value={cards.availability || 0}
-            suffix="%"
-            color={getColor(cards.availability,"availability")}
-          />
-        </Col>
-      </Row>
-
-      {/* ROW 2 */}
-
-      <Row
-        gutter={[12, 12]}
-        style={{ marginTop: 12 }}
-      >
-        <Col {...commonCol}>
-          <KPICard
-            title="Painted Area"
-            value={formatPaintedArea(
-              cards.paintedArea
-            )}
-            suffix=" m²"
-            color="#52c41a"
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="Reject %"
-            value={cards.rejectPercent || 0}
-            suffix="%"
-            color={getColor(cards.rejectPercent,"reject")}
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="Rework %"
-            value={cards.reworkPercent || 0}
-            suffix="%"
-            color={getColor(cards.reworkPercent,"rework")}
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="Downtime"
-            value={cards.downtime || 0}
-            suffix=" min"
-            color="#ff4d4f"
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="Performance %"
-            value={cards.performance || 0}
-            suffix="%"
-            color="#722ed1"
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="Short Manpower"
-            value={cards.shortManpower || 0}
-            color="#ff4d4f"
-          />
-        </Col>
-
-        <Col {...commonCol}>
-          <KPICard
-            title="Production Rate"
-            value={cards.productionRate || 0}
-            suffix="/hr"
-            color="#1677ff"
-          />
-        </Col>
-      </Row>
-    </>
-    
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-2">
+      {items.map((item) => (
+        <KPICard key={item.label} {...item} />
+      ))}
+    </div>
   );
-  
 };
 
 export default ExecutiveKPICards;
