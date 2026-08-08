@@ -18,7 +18,15 @@ export const DashboardProvider = ({ children }) => {
 
   const [productionTrend, setProductionTrend] = useState([]);
   const [achievementTrend, setAchievementTrend] = useState([]);
+  const [productionRateTrend, setProductionRateTrend] = useState([]);
+  const [oeeTrend, setOeeTrend] = useState([]);
   const [trendLoading, setTrendLoading] = useState(true);
+
+  const [qualityTrend, setQualityTrend] = useState([]);
+  const [qualityPerformanceTrend, setQualityPerformanceTrend] = useState([]);
+  const [defectDistribution, setDefectDistribution] = useState([]);
+  const [defectPareto, setDefectPareto] = useState([]);
+  const [qualityLoading, setQualityLoading] = useState(true);
 
   const [datePreset, setDatePreset] = useState("today");
   const [dateRange, setDateRange] = useState(() => DATE_PRESETS.find((p) => p.key === "today").range());
@@ -93,17 +101,52 @@ export const DashboardProvider = ({ children }) => {
         toDate: dateRange[1]?.endOf("day").toISOString(),
       };
 
-      const [productionRes, achievementRes] = await Promise.all([
+      const [productionRes, achievementRes, rateRes, oeeRes] = await Promise.all([
         axiosInstance.get("/dashboard/production-trend", { params }),
         axiosInstance.get("/dashboard/achievement-trend", { params }),
+        axiosInstance.get("/dashboard/production-rate-trend", { params }),
+        axiosInstance.get("/dashboard/oee-trend", { params }),
       ]);
 
       setProductionTrend(productionRes.data.data || []);
       setAchievementTrend(achievementRes.data.data || []);
+      setProductionRateTrend(rateRes.data.data || []);
+      setOeeTrend(oeeRes.data.data || []);
     } catch (error) {
       console.error(error);
     } finally {
       setTrendLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
+  const fetchQualityAnalytics = useCallback(async () => {
+    setQualityLoading(true);
+    try {
+      const params = {
+        locationId: filters.locationId,
+        plantId: filters.plantId,
+        shiftId: filters.shiftId,
+        conveyorId: filters.conveyorId,
+        fromDate: dateRange[0]?.startOf("day").toISOString(),
+        toDate: dateRange[1]?.endOf("day").toISOString(),
+      };
+
+      const [qualityRes, qualityPerfRes, distributionRes, paretoRes] = await Promise.all([
+        axiosInstance.get("/dashboard/quality-trend", { params }),
+        axiosInstance.get("/dashboard/quality-performance-trend", { params }),
+        axiosInstance.get("/dashboard/defect-distribution", { params }),
+        axiosInstance.get("/dashboard/defect-pareto", { params }),
+      ]);
+
+      setQualityTrend(qualityRes.data.data || []);
+      setQualityPerformanceTrend(qualityPerfRes.data.data || []);
+      setDefectDistribution(distributionRes.data.data || []);
+      setDefectPareto(paretoRes.data.data || []);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setQualityLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
@@ -114,6 +157,7 @@ export const DashboardProvider = ({ children }) => {
     if (!user) return;
     fetchSummary();
     fetchTrends();
+    fetchQualityAnalytics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange[0]?.valueOf(), dateRange[1]?.valueOf()]);
 
@@ -123,7 +167,8 @@ export const DashboardProvider = ({ children }) => {
         filters, setFilters, locations, plants, shifts, conveyors,
         cards, loading, datePreset, dateRange,
         onPresetChange, onCustomRangeChange, onRefresh: fetchSummary,
-        productionTrend, achievementTrend, trendLoading,
+        productionTrend, achievementTrend, productionRateTrend, oeeTrend, trendLoading,
+        qualityTrend, qualityPerformanceTrend, defectDistribution, defectPareto, qualityLoading,
       }}
     >
       {children}
