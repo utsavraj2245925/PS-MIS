@@ -10,6 +10,10 @@ import {
   getQualityPerformanceTrend,
   getDefectDistribution,
   getDefectPareto,
+  getTopModels,
+  getTopParts,
+  getModelProductionContribution,
+  getPartPerformanceDistribution,
 } from "../controllers/dashboard.controller.js";
 import { isAuthenticated } from "../Auth/isAuthenticated.js";
 
@@ -25,5 +29,9 @@ router.get("/quality-trend", isAuthenticated, getQualityTrend);
 router.get("/quality-performance-trend", isAuthenticated, getQualityPerformanceTrend);
 router.get("/defect-distribution", isAuthenticated, getDefectDistribution);
 router.get("/defect-pareto", isAuthenticated, getDefectPareto);
+router.get("/top-models", isAuthenticated, getTopModels);
+router.get("/top-parts", isAuthenticated, getTopParts);
+router.get("/model-production-contribution", isAuthenticated, getModelProductionContribution);
+router.get("/part-performance-distribution", isAuthenticated, getPartPerformanceDistribution);
 
 export default router;

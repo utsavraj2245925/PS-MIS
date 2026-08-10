@@ -28,6 +28,13 @@ export const DashboardProvider = ({ children }) => {
   const [defectPareto, setDefectPareto] = useState([]);
   const [qualityLoading, setQualityLoading] = useState(true);
 
+  const [topModels, setTopModels] = useState([]);
+  const [topParts, setTopParts] = useState([]);
+  const [modelProductionContribution, setModelProductionContribution] = useState({ total: 0, models: [] });
+  const [partPerformanceDistribution, setPartPerformanceDistribution] = useState([]);
+  const [modelPartLoading, setModelPartLoading] = useState(true);
+  const [selectedPartModel, setSelectedPartModel] = useState("");
+
   const [datePreset, setDatePreset] = useState("today");
   const [dateRange, setDateRange] = useState(() => DATE_PRESETS.find((p) => p.key === "today").range());
 
@@ -151,6 +158,61 @@ export const DashboardProvider = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
 
+  const fetchTopParts = useCallback(async (modelId) => {
+    try {
+      const params = {
+        locationId: filters.locationId,
+        plantId: filters.plantId,
+        shiftId: filters.shiftId,
+        conveyorId: filters.conveyorId,
+        fromDate: dateRange[0]?.startOf("day").toISOString(),
+        toDate: dateRange[1]?.endOf("day").toISOString(),
+        modelId: modelId || undefined,
+      };
+      const res = await axiosInstance.get("/dashboard/top-parts", { params });
+      setTopParts(res.data.data || []);
+    } catch (error) {
+      console.error(error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
+  const handlePartModelChange = (modelId) => {
+    setSelectedPartModel(modelId);
+    fetchTopParts(modelId);
+  };
+
+  const fetchModelPartAnalytics = useCallback(async () => {
+    setModelPartLoading(true);
+    try {
+      const params = {
+        locationId: filters.locationId,
+        plantId: filters.plantId,
+        shiftId: filters.shiftId,
+        conveyorId: filters.conveyorId,
+        fromDate: dateRange[0]?.startOf("day").toISOString(),
+        toDate: dateRange[1]?.endOf("day").toISOString(),
+      };
+
+      const [modelsRes, contributionRes, distributionRes] = await Promise.all([
+        axiosInstance.get("/dashboard/top-models", { params }),
+        axiosInstance.get("/dashboard/model-production-contribution", { params }),
+        axiosInstance.get("/dashboard/part-performance-distribution", { params }),
+      ]);
+
+      setTopModels(modelsRes.data.data || []);
+      setModelProductionContribution(contributionRes.data.data || { total: 0, models: [] });
+      setPartPerformanceDistribution(distributionRes.data.data || []);
+
+      await fetchTopParts(selectedPartModel);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setModelPartLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
   useEffect(() => { if (user) fetchFilters(); }, [user, fetchFilters]);
 
   useEffect(() => {
@@ -158,6 +220,7 @@ export const DashboardProvider = ({ children }) => {
     fetchSummary();
     fetchTrends();
     fetchQualityAnalytics();
+    fetchModelPartAnalytics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange[0]?.valueOf(), dateRange[1]?.valueOf()]);
 
@@ -169,6 +232,8 @@ export const DashboardProvider = ({ children }) => {
         onPresetChange, onCustomRangeChange, onRefresh: fetchSummary,
         productionTrend, achievementTrend, productionRateTrend, oeeTrend, trendLoading,
         qualityTrend, qualityPerformanceTrend, defectDistribution, defectPareto, qualityLoading,
+        topModels, topParts, modelProductionContribution, partPerformanceDistribution,
+        modelPartLoading, selectedPartModel, handlePartModelChange,
       }}
     >
       {children}

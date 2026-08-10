@@ -14,6 +14,12 @@ import {
   getDefectDistribution as getDefectDistributionService,
   getDefectPareto as getDefectParetoService,
 } from "../services/dashboard/defectAnalytics.service.js";
+import {
+  getTopModels as getTopModelsService,
+  getTopParts as getTopPartsService,
+  getModelProductionContribution as getModelProductionContributionService,
+  getPartPerformanceDistribution as getPartPerformanceDistributionService,
+} from "../services/dashboard/modelPartAnalytics.service.js";
 
 const extractConveyors = (plants = []) => {
   const conveyors = [];
@@ -31,18 +37,18 @@ const extractConveyors = (plants = []) => {
   return conveyors;
 };
 
+const extractFilters = (req) => ({
+  fromDate: req.query.fromDate,
+  toDate: req.query.toDate,
+  shiftId: req.query.shiftId,
+  plantId: req.query.plantId,
+  locationId: req.query.locationId,
+  conveyorId: req.query.conveyorId,
+});
+
 export const getDashboardSummary = async (req, res) => {
   try {
-    const filters = {
-      fromDate: req.query.fromDate,
-      toDate: req.query.toDate,
-      shiftId: req.query.shiftId,
-      plantId: req.query.plantId,
-      locationId: req.query.locationId,
-      conveyorId: req.query.conveyorId,
-    };
-
-    const data = await dashboardSummaryService(req.user, filters);
+    const data = await dashboardSummaryService(req.user, extractFilters(req));
 
     return res.status(200).json({
       success: true,
@@ -119,12 +125,7 @@ export const getFilterOptions = async (req, res) => {
 
 export const getProductionTrend = async (req, res) => {
   try {
-    const filters = {
-      fromDate: req.query.fromDate, toDate: req.query.toDate,
-      shiftId: req.query.shiftId, plantId: req.query.plantId,
-      locationId: req.query.locationId, conveyorId: req.query.conveyorId,
-    };
-    const data = await getProductionTrendService(req.user, filters);
+    const data = await getProductionTrendService(req.user, extractFilters(req));
     return res.status(200).json({ success: true, message: "Production trend fetched successfully", data });
   } catch (error) {
     console.error("PRODUCTION TREND ERROR:", error);
@@ -134,12 +135,7 @@ export const getProductionTrend = async (req, res) => {
 
 export const getAchievementTrend = async (req, res) => {
   try {
-    const filters = {
-      fromDate: req.query.fromDate, toDate: req.query.toDate,
-      shiftId: req.query.shiftId, plantId: req.query.plantId,
-      locationId: req.query.locationId, conveyorId: req.query.conveyorId,
-    };
-    const data = await getAchievementTrendService(req.user, filters);
+    const data = await getAchievementTrendService(req.user, extractFilters(req));
     return res.status(200).json({ success: true, message: "Achievement trend fetched successfully", data });
   } catch (error) {
     console.error("ACHIEVEMENT TREND ERROR:", error);
@@ -149,12 +145,7 @@ export const getAchievementTrend = async (req, res) => {
 
 export const getProductionRateTrend = async (req, res) => {
   try {
-    const filters = {
-      fromDate: req.query.fromDate, toDate: req.query.toDate,
-      shiftId: req.query.shiftId, plantId: req.query.plantId,
-      locationId: req.query.locationId, conveyorId: req.query.conveyorId,
-    };
-    const data = await getProductionRateTrendService(req.user, filters);
+    const data = await getProductionRateTrendService(req.user, extractFilters(req));
     return res.status(200).json({ success: true, message: "Production rate trend fetched successfully", data });
   } catch (error) {
     console.error("PRODUCTION RATE TREND ERROR:", error);
@@ -164,12 +155,7 @@ export const getProductionRateTrend = async (req, res) => {
 
 export const getOEETrend = async (req, res) => {
   try {
-    const filters = {
-      fromDate: req.query.fromDate, toDate: req.query.toDate,
-      shiftId: req.query.shiftId, plantId: req.query.plantId,
-      locationId: req.query.locationId, conveyorId: req.query.conveyorId,
-    };
-    const data = await getOEETrendService(req.user, filters);
+    const data = await getOEETrendService(req.user, extractFilters(req));
     return res.status(200).json({ success: true, message: "OEE trend fetched successfully", data });
   } catch (error) {
     console.error("OEE TREND ERROR:", error);
@@ -179,12 +165,7 @@ export const getOEETrend = async (req, res) => {
 
 export const getQualityTrend = async (req, res) => {
   try {
-    const filters = {
-      fromDate: req.query.fromDate, toDate: req.query.toDate,
-      shiftId: req.query.shiftId, plantId: req.query.plantId,
-      locationId: req.query.locationId, conveyorId: req.query.conveyorId,
-    };
-    const data = await getQualityTrendService(req.user, filters);
+    const data = await getQualityTrendService(req.user, extractFilters(req));
     return res.status(200).json({ success: true, message: "Quality trend fetched successfully", data });
   } catch (error) {
     console.error("QUALITY TREND ERROR:", error);
@@ -194,12 +175,7 @@ export const getQualityTrend = async (req, res) => {
 
 export const getQualityPerformanceTrend = async (req, res) => {
   try {
-    const filters = {
-      fromDate: req.query.fromDate, toDate: req.query.toDate,
-      shiftId: req.query.shiftId, plantId: req.query.plantId,
-      locationId: req.query.locationId, conveyorId: req.query.conveyorId,
-    };
-    const data = await getQualityPerformanceTrendService(req.user, filters);
+    const data = await getQualityPerformanceTrendService(req.user, extractFilters(req));
     return res.status(200).json({ success: true, message: "Quality performance trend fetched successfully", data });
   } catch (error) {
     console.error("QUALITY PERFORMANCE TREND ERROR:", error);
@@ -209,12 +185,7 @@ export const getQualityPerformanceTrend = async (req, res) => {
 
 export const getDefectDistribution = async (req, res) => {
   try {
-    const filters = {
-      fromDate: req.query.fromDate, toDate: req.query.toDate,
-      shiftId: req.query.shiftId, plantId: req.query.plantId,
-      locationId: req.query.locationId, conveyorId: req.query.conveyorId,
-    };
-    const data = await getDefectDistributionService(req.user, filters);
+    const data = await getDefectDistributionService(req.user, extractFilters(req));
     return res.status(200).json({ success: true, message: "Defect distribution fetched successfully", data });
   } catch (error) {
     console.error("DEFECT DISTRIBUTION ERROR:", error);
@@ -224,15 +195,50 @@ export const getDefectDistribution = async (req, res) => {
 
 export const getDefectPareto = async (req, res) => {
   try {
-    const filters = {
-      fromDate: req.query.fromDate, toDate: req.query.toDate,
-      shiftId: req.query.shiftId, plantId: req.query.plantId,
-      locationId: req.query.locationId, conveyorId: req.query.conveyorId,
-    };
-    const data = await getDefectParetoService(req.user, filters);
+    const data = await getDefectParetoService(req.user, extractFilters(req));
     return res.status(200).json({ success: true, message: "Defect pareto fetched successfully", data });
   } catch (error) {
     console.error("DEFECT PARETO ERROR:", error);
     return res.status(500).json({ success: false, message: error.message || "Failed to fetch defect pareto" });
+  }
+};
+
+export const getTopModels = async (req, res) => {
+  try {
+    const data = await getTopModelsService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Top models fetched successfully", data });
+  } catch (error) {
+    console.error("TOP MODELS ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch top models" });
+  }
+};
+
+export const getTopParts = async (req, res) => {
+  try {
+    const data = await getTopPartsService(req.user, extractFilters(req), req.query.modelId || null);
+    return res.status(200).json({ success: true, message: "Top parts fetched successfully", data });
+  } catch (error) {
+    console.error("TOP PARTS ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch top parts" });
+  }
+};
+
+export const getModelProductionContribution = async (req, res) => {
+  try {
+    const data = await getModelProductionContributionService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Model production contribution fetched successfully", data });
+  } catch (error) {
+    console.error("MODEL CONTRIBUTION ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch model production contribution" });
+  }
+};
+
+export const getPartPerformanceDistribution = async (req, res) => {
+  try {
+    const data = await getPartPerformanceDistributionService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Part performance distribution fetched successfully", data });
+  } catch (error) {
+    console.error("PART DISTRIBUTION ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch part performance distribution" });
   }
 };

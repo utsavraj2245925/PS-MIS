@@ -12,6 +12,10 @@ import QualityTrend from "./components/QualityTrend";
 import QualityPerformanceTrend from "./components/QualityPerformanceTrend";
 import DefectDistribution from "./components/DefectDistribution";
 import DefectPareto from "./components/DefectPareto";
+import TopPerformingModels from "./components/TopPerformingModels";
+import TopPerformingParts from "./components/TopPerformingParts";
+import ModelProductionContribution from "./components/ModelProductionContribution";
+import PartPerformanceDistribution from "./components/PartPerformanceDistribution";
 
 const DashboardPage = () => {
   const { cards, loading } = useDashboard() || {};
@@ -48,6 +52,16 @@ const DashboardPage = () => {
           <DefectDistribution />
         </div>
         <DefectPareto />
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-slate-600 mb-2">Model & Part Performance</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <TopPerformingModels />
+          <TopPerformingParts />
+          <ModelProductionContribution />
+          <PartPerformanceDistribution />
+        </div>
       </div>
     </div>
   );
