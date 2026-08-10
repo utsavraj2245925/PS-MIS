@@ -5,14 +5,20 @@ import jwt from "jsonwebtoken";
 // LOGIN USER
 export const loginUser = async (req, res) => {
   try {
-    
+
     const { email, password } = req.body;
-    // CHECK USER
-    const user = await User.findOne({ email });
+
+    // CHECK USER — fetch with the exact same populate shape authenticateMe
+    // uses, so login and reload never diverge in what the frontend receives.
+    const user = await User.findOne({ email })
+      .populate("locationId", "locationName locationCode")
+      .populate("plantId", "plantName locationName locationId")
+      .populate("shiftId", "shiftName shiftType shiftStartTime shiftEndTime actualWorkingHours actualWorkingMinutes");
+
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-    
+
     // CHECK PASSWORD
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -34,16 +40,12 @@ export const loginUser = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
+    const userToReturn = user.toObject();
+    delete userToReturn.password;
+
     return res.status(200).json({
       success: true,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        location: user.location,
-        plant: user.plant,
-      },
+      user: userToReturn,
     });
 
   } catch (error) {
@@ -55,8 +57,10 @@ export const loginUser = async (req, res) => {
 
 export const authenticateMe = async (req, res) => {
     try {
-      const user = await User.findById( req.user.id)
-      .populate("plantId", "plantName location")
+      const user = await User.findById(req.user.id)
+      .populate("locationId", "locationName locationCode")
+      .populate("plantId", "plantName locationName locationId")
+      .populate("shiftId", "shiftName shiftType shiftStartTime shiftEndTime actualWorkingHours actualWorkingMinutes")
       .select("-password");
       console.log("LOGIN USER =", {
         role: user.role,

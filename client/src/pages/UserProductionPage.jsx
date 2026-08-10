@@ -149,7 +149,7 @@ const KpiCard = ({ icon: Icon, label, value, tone }) => {
 ────────────────────────────────────────────────────────── */
 export default function UserProductionPage() {
   /* ── auth + routing ── */
-  const { logout, user } = useAuth();
+  const { logout, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
 
@@ -452,7 +452,11 @@ export default function UserProductionPage() {
     }
   }, [fetchModels, fetchRejectTypes, fetchReworkTypes, fetchDowntimeTypes, fetchMaterials, fetchPlantShifts]);
 
-  useEffect(() => { loadEverything(); }, [loadEverything]);
+  useEffect(() => {
+  if (authLoading || !user) return; // wait for /auth/me to resolve before fetching plant-scoped data
+  loadEverything();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [authLoading, user?._id, loadEverything]);
 
   /* ════════════════════════════════════════════════════════
      DRAFT PERSISTENCE — hydrate once per operator, then keep
@@ -1149,7 +1153,7 @@ export default function UserProductionPage() {
         { Field: "Reported By", Value: user?.name },
         { Field: "Email", Value: user?.email },
         { Field: "Plant", Value: user?.plantId?.plantName || user?.plantName },
-        { Field: "Location", Value: user?.plantId?.location || user?.location },
+        { Field: "Location", Value: user?.locationName || user?.plantId?.locationName },
         { Field: "Shift", Value: activeShift?.shiftType || "No active shift" },
         { Field: "Date", Value: dayjs().format("DD/MM/YYYY HH:mm") },
         { Field: "Shift Window", Value: activeShift ? `${activeShift.shiftStartTime} – ${activeShift.shiftEndTime}` : "—" },
@@ -1310,12 +1314,12 @@ export default function UserProductionPage() {
               </div>
             </div>
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg hidden md:flex" style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-              <Factory size={12} className="text-teal-600 flex-shrink-0" />
-              <div className="leading-none">
-                <div className="text-[11px] font-semibold text-slate-800">{user?.plantId?.plantName || user?.plantName || "Location"}</div>
-                <div className="text-[9px] text-slate-400 mt-0.5">{user?.plantId?.location || user?.location || "—"}</div>
-              </div>
+            <Factory size={12} className="text-teal-600 flex-shrink-0" />
+            <div className="leading-none">
+              <div className="text-[11px] font-semibold text-slate-800">{user?.plantId?.plantName || user?.plantName || "—"}</div>
+              <div className="text-[9px] text-slate-400 mt-0.5">{user?.locationName || user?.plantId?.locationName || "—"}</div>
             </div>
+          </div>
             <div className="px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1"
               style={!activeShift ? { background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#94a3b8" } : activeShift.shiftType === "Day" ? { background: "#fefce8", border: "1px solid #fde68a", color: "#92400e" } : { background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af" }}>
               {activeShift ? (activeShift.shiftType === "Day" ? <Sun size={11} /> : <Moon size={11} />) : null}
@@ -1367,7 +1371,7 @@ export default function UserProductionPage() {
               <div><label className={LABEL}>Reported By</label><div className={FIELD}>{user?.name || "—"}</div></div>
               <div><label className={LABEL}>Email</label><div className={`${FIELD} truncate`}>{user?.email || "—"}</div></div>
               <div><label className={LABEL}>Plant</label><div className={FIELD}>{user?.plantId?.plantName || user?.plantName || "—"}</div></div>
-              <div><label className={LABEL}>Location</label><div className={FIELD}>{user?.plantId?.location || user?.location || "—"}</div></div>
+              <div><label className={LABEL}>Location</label><div className={FIELD}>{user?.locationName || user?.plantId?.locationName || "—"}</div></div>
               <div>
                 <label className={LABEL}>Total Target{hasConveyorLines && activeLine ? ` — ${activeLineLabel}` : ""}</label>
                 <div className={`${FIELD} text-teal-700 font-bold`}>{hasConveyorLines ? (activeLine?.demandPerShift ?? 0) : plantTotalTarget}</div>
