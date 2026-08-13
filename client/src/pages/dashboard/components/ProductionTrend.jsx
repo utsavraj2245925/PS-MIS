@@ -51,14 +51,30 @@ const ProductionTrend = () => {
       ) : (
         <>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={productionTrend} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={formatDateTick} tick={{ fontSize: 10, fill: "#64748b" }} axisLine={{ stroke: "#e2e8f0" }} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
+            <LineChart data={productionTrend} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" tickFormatter={formatDateTick} tick={{ fontSize: 10, fill: "#64748b" }} axisLine={{ stroke: "#cbd5e1" }} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: "#64748b" }} axisLine={{ stroke: "#cbd5e1" }} tickLine={false} />
               <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="production" name="Production" stroke="#2563eb" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-              <Line type="monotone" dataKey="target" name="Target" stroke="#0d9488" strokeWidth={2} strokeDasharray="4 3" dot={false} activeDot={{ r: 4 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
+              <Line
+                type="linear"
+                dataKey="production"
+                name="Actual"
+                stroke="#2563eb"
+                strokeWidth={2.5}
+                dot={{ r: 3.5, fill: "#2563eb", strokeWidth: 0 }}
+                activeDot={{ r: 5 }}
+              />
+              <Line
+                type="linear"
+                dataKey="target"
+                name="Goal"
+                stroke="#f59e0b"
+                strokeWidth={2.5}
+                dot={{ r: 3.5, fill: "#f59e0b", strokeWidth: 0 }}
+                activeDot={{ r: 5 }}
+              />
             </LineChart>
           </ResponsiveContainer>
           <p className="text-[11px] text-slate-500 mt-1">Total: <span className="font-semibold text-blue-600">{totalProduction.toLocaleString()}</span></p>

@@ -36,7 +36,7 @@ export const getSummary = async (user, filters = {}) => {
     const availability = availableTime > 0 ? Number(((operatingTime / availableTime) * 100).toFixed(2)) : 0;
     const performance = target > 0 ? Number(((production / target) * 100).toFixed(2)) : 0;
 
-    const shortManpower = sum(entries, "shortManpower");
+    const shortManpower = sum(entries, "shortageManpower");
 
     let paintedArea = 0;
     entries.forEach((entry) => {

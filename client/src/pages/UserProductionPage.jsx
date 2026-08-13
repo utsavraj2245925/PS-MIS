@@ -69,16 +69,6 @@ const formatHMS = (totalSeconds) => {
    Survives refresh, tab close, browser close, and logout — scoped per
    operator email so a shared shop-floor terminal doesn't show one
    person's unsaved entry to the next person who logs in.
-
-   Note on "runs in the background while the browser is closed": no
-   client-side JS can literally keep executing once the browser is fully
-   closed. What actually solves the real need here is that every timer on
-   this page is computed as (now − a stored real timestamp), never as an
-   incrementing counter. Because we persist the real ISO timestamps
-   (job start times, downtime start times, etc.) and recompute against
-   the current clock on every load, reopening the page shows the exact
-   same elapsed time it would have if it had "kept running" the whole
-   time — same result, without needing anything to execute while closed.
 ────────────────────────────────────────────────────────── */
 const draftKey = (email) => `pg_prod_entry_draft_${email || "guest"}`;
 
@@ -94,8 +84,7 @@ const saveDraft = (email, data) => {
   try {
     localStorage.setItem(draftKey(email), JSON.stringify(data));
   } catch {
-    // storage full or unavailable (private browsing etc.) — fail silently,
-    // in-memory state still works fine for the current tab session
+    // storage full or unavailable (private browsing etc.) — fail silently
   }
 };
 const clearDraft = (email) => {
@@ -133,13 +122,13 @@ const KpiCard = ({ icon: Icon, label, value, tone }) => {
     teal:   "bg-teal-50 border-teal-200 text-teal-700",
   };
   return (
-    <div className={`rounded-lg border p-2.5 shadow-sm flex flex-col gap-0.5 ${tones[tone]}`}>
+    <div className={`rounded-lg border p-2 shadow-sm flex flex-col gap-0.5 w-full ${tones[tone]}`}>
       <div className="flex items-center justify-between">
-        <Icon size={13} className="opacity-70" />
-        <ChevronRight size={10} className="opacity-30" />
+        <Icon size={12} className="opacity-70" />
+        <ChevronRight size={9} className="opacity-30" />
       </div>
-      <div className="text-base font-bold mt-0.5 leading-none">{value}</div>
-      <div className="text-[9px] opacity-70">{label}</div>
+      <div className="text-sm font-bold mt-0.5 leading-none whitespace-nowrap">{value}</div>
+      <div className="text-[8px] opacity-70 whitespace-nowrap">{label}</div>
     </div>
   );
 };
@@ -540,10 +529,7 @@ export default function UserProductionPage() {
   };
 
   /* Re-fetch conveyor-strength targets whenever the resolved active shift
-     changes (page load, or a Morning→Night rollover mid-session). Scoping
-     by shiftId (and conveyorId, via the backend) is what stops the plant's
-     other shift's demandPerShift from being summed in — e.g. Line 1 having
-     separate 15000 (Shift 1) / 12000 (Shift 2) configs no longer double-count. */
+     changes (page load, or a Morning→Night rollover mid-session). */
   useEffect(() => {
     if (activeShift?._id) {
       fetchPlantStrengths(activeShift._id);
@@ -1238,19 +1224,19 @@ export default function UserProductionPage() {
     <div className="min-h-screen bg-slate-100">
 
       {/* ══════════════════════════════════════════════════
-          NAVBAR
+          NAVBAR + KPI BAR — stacked in one sticky wrapper so
+          there is zero gap between them and both stay pinned
+          together while the page scrolls underneath. Navbar
+          collapses to logo + Records/Logout only on mobile.
       ══════════════════════════════════════════════════ */}
-      <div
-        className="bg-white sticky top-0 z-50"
-        style={{
-          borderBottom: "1px solid #e2e8f0",
-          boxShadow: "0 1px 12px rgba(0,0,0,0.06)",
-        }}
-      >
-        <div className="px-5 h-[60px] flex items-center justify-between gap-3">
+      <div className="sticky top-0 z-50 bg-white">
 
-          {/* LEFT — branding */}
-          <div className="flex items-center gap-3 flex-shrink-0">
+        {/* ── NAVBAR ── */}
+        <div style={{ borderBottom: "1px solid #e2e8f0" }}>
+          <div className="px-3 sm:px-5 h-[56px] flex items-center justify-between gap-2 sm:gap-3">
+
+            {/* LEFT — branding (logo always visible; everything else desktop-only) */}
+            <div className="flex items-center gap-3 flex-shrink-0">
             <div
               className="w-20 h-20 rounded-full flex items-center justify-center"
             
@@ -1265,75 +1251,99 @@ export default function UserProductionPage() {
                 }}
               />
              </div> 
+              <div className="leading-none min-w-0">
+                <div className="font-black text-[13px] sm:text-[15px] truncate" style={{ color: "#b00000", letterSpacing: "-0.5px" }}>
+                  PG-GROUP
+                </div>
+                <div className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 font-medium tracking-wide hidden sm:block">
+                  PAINT SHOP MIS
+                </div>
+              </div>
 
-            <div className="leading-none">
-              <div className="font-black text-[15px]" style={{ color: "#b00000", letterSpacing: "-0.5px" }}>
-                PG-GROUP
-              </div>                                   
-              <div className="text-[10px] text-slate-400 mt-0.5 font-medium tracking-wide">
-                PAINT SHOP MIS
+              {/* desktop-only secondary branding */}
+              <div className="hidden md:flex items-center gap-3">
+                <div className="w-px h-7 bg-slate-200 mx-1" />
+                <div>
+                  <div className="text-xs font-bold text-slate-800 leading-none">Production Entry</div>
+                  <div className="text-[9px] text-slate-500 mt-0.5">Daily Shift Report</div>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
+                  <span className="text-[9px] font-bold text-green-600 tracking-widest">LIVE</span>
+                </div>
               </div>
             </div>
-            <div className="w-px h-7 bg-slate-200 mx-1" />
-            <div>
-              <div className="text-xs font-bold text-slate-800 leading-none">Production Entry</div>
-              <div className="text-[9px] text-slate-500 mt-0.5">Daily Shift Report</div>
-            </div>
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
-              <span className="text-[9px] font-bold text-green-600 tracking-widest">LIVE</span>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-1.5 flex-wrap justify-center flex-1">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-              <CalendarDays size={12} className="text-slate-400" />
-              <span className="text-[11px] text-slate-600 font-mono">{now.format("DD MMM YYYY")}</span>
-              <span className="text-slate-300 text-[11px]">|</span>
-              <span className="text-[11px] font-mono font-bold" style={{ color: "#0d9488" }}>{now.format("HH:mm:ss")}</span>
-            </div>
-            <Tooltip title="Refresh all master data">
-              <Button size="small" icon={<RefreshCcw size={14} />} loading={refreshing} onClick={handleRefresh} className="!rounded-lg" />
-            </Tooltip>
-            <Tooltip title="Reset all entry data for this shift">
-              <Button size="small" icon={<Eraser size={13} />} onClick={() => setResetConfirmOpen(true)}
-                className="!rounded-lg !text-red-600 !border-red-200 !bg-red-50" />
-            </Tooltip>
-            <Tooltip title="Download Production Report">
-              <Button size="small" icon={<Download size={13} />} loading={exporting} onClick={handleExportExcel}
-                className="!rounded-lg !font-semibold !text-white" style={{ backgroundColor: "#059669", borderColor: "#059669" }} />
-            </Tooltip>
-          </div>
-
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-              <UserCircle2 size={13} className="text-teal-600 flex-shrink-0" />
-              <div className="leading-none">
-                <div className="text-[11px] font-semibold text-slate-800">{user?.name || "—"}</div>
-                <div className="text-[9px] text-slate-400 mt-0.5">{user?.email || "—"}</div>
+            {/* CENTER — clock + refresh/reset/download — desktop only */}
+            <div className="hidden md:flex items-center gap-1.5 flex-wrap justify-center flex-1">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                <CalendarDays size={12} className="text-slate-400" />
+                <span className="text-[11px] text-slate-600 font-mono">{now.format("DD MMM YYYY")}</span>
+                <span className="text-slate-300 text-[11px]">|</span>
+                <span className="text-[11px] font-mono font-bold" style={{ color: "#0d9488" }}>{now.format("HH:mm:ss")}</span>
               </div>
+              <Tooltip title="Refresh all master data">
+                <Button size="small" icon={<RefreshCcw size={14} />} loading={refreshing} onClick={handleRefresh} className="!rounded-lg" />
+              </Tooltip>
+              <Tooltip title="Reset all entry data for this shift">
+                <Button size="small" icon={<Eraser size={13} />} onClick={() => setResetConfirmOpen(true)}
+                  className="!rounded-lg !text-red-600 !border-red-200 !bg-red-50" />
+              </Tooltip>
+              <Tooltip title="Download Production Report">
+                <Button size="small" icon={<Download size={13} />} loading={exporting} onClick={handleExportExcel}
+                  className="!rounded-lg !font-semibold !text-white" style={{ backgroundColor: "#059669", borderColor: "#059669" }} />
+              </Tooltip>
             </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg hidden md:flex" style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-            <Factory size={12} className="text-teal-600 flex-shrink-0" />
-            <div className="leading-none">
-              <div className="text-[11px] font-semibold text-slate-800">{user?.plantId?.plantName || user?.plantName || "—"}</div>
-              <div className="text-[9px] text-slate-400 mt-0.5">{user?.locationName || user?.plantId?.locationName || "—"}</div>
+
+            {/* RIGHT — user/plant/shift info (desktop only) + Records/Logout (always visible) */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                <UserCircle2 size={13} className="text-teal-600 flex-shrink-0" />
+                <div className="leading-none">
+                  <div className="text-[11px] font-semibold text-slate-800">{user?.name || "—"}</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">{user?.email || "—"}</div>
+                </div>
+              </div>
+              <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                <Factory size={12} className="text-teal-600 flex-shrink-0" />
+                <div className="leading-none">
+                  <div className="text-[11px] font-semibold text-slate-800">{user?.plantId?.plantName || user?.plantName || "—"}</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">{user?.locationName || user?.plantId?.locationName || "—"}</div>
+                </div>
+              </div>
+              <div className="hidden md:flex px-2.5 py-1 rounded-lg text-[11px] font-bold items-center gap-1"
+                style={!activeShift ? { background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#94a3b8" } : activeShift.shiftType === "Day" ? { background: "#fefce8", border: "1px solid #fde68a", color: "#92400e" } : { background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af" }}>
+                {activeShift ? (activeShift.shiftType === "Day" ? <Sun size={11} /> : <Moon size={11} />) : null}
+                {activeShift?.shiftType || "No Shift"}
+              </div>
+              <div className="hidden md:block w-px h-6 bg-slate-200" />
+              <Tooltip title="Back to Production Records">
+                <Button size="small" icon={<ArrowLeft size={12} />} onClick={() => navigate("/production-records")}
+                  className="!rounded-lg !font-semibold !text-slate-600 !border-slate-300 !text-[11px] !px-2">
+                  <span className="hidden sm:inline">Records</span>
+                </Button>
+              </Tooltip>
+              <Tooltip title="Sign out">
+                <Button size="small" icon={<LogOut size={12} />} onClick={handleLogout}
+                  className="!rounded-lg !font-semibold !text-red-600 !border-red-200 !bg-red-50" />
+              </Tooltip>
             </div>
           </div>
-            <div className="px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1"
-              style={!activeShift ? { background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#94a3b8" } : activeShift.shiftType === "Day" ? { background: "#fefce8", border: "1px solid #fde68a", color: "#92400e" } : { background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af" }}>
-              {activeShift ? (activeShift.shiftType === "Day" ? <Sun size={11} /> : <Moon size={11} />) : null}
-              {activeShift?.shiftType || "No Shift"}
-            </div>
-            <div className="w-px h-6 bg-slate-200" />
-            <Tooltip title="Back to Production Records">
-              <Button size="small" icon={<ArrowLeft size={12} />} onClick={() => navigate("/production-records")}
-                className="!rounded-lg !font-semibold !text-slate-600 !border-slate-300 !text-[11px]">Records</Button>
-            </Tooltip>
-            <Tooltip title="Sign out">
-              <Button size="small" icon={<LogOut size={12} />} onClick={handleLogout}
-                className="!rounded-lg !font-semibold !text-red-600 !border-red-200 !bg-red-50" />
-            </Tooltip>
+        </div>
+
+        {/* ── KPI BAR — grid stretches to fill the full row width at every
+             breakpoint; wraps to 2 rows of 4 on narrow screens instead of
+             leaving dead space or requiring a horizontal scroll ── */}
+        <div className="border-b border-slate-200" style={{ background: "#f8fafc" }}>
+          <div className="grid grid-cols-4 md:grid-cols-8 gap-1.5 px-3 py-1.5">
+            <KpiCard icon={Package}       label="Total Production"    value={productionTotals}         tone="blue" />
+            <KpiCard icon={ShieldAlert}   label="Total Reject"        value={defectTotals.reject}      tone="red" />
+            <KpiCard icon={RotateCcw}     label="Total Rework"        value={defectTotals.rework}      tone="amber" />
+            <KpiCard icon={AlertTriangle} label="Total Defects"       value={defectTotals.total}       tone="slate" />
+            <KpiCard icon={Clock3}        label="Downtime (min)"      value={downtimeTotals.total}     tone="purple" />
+            <KpiCard icon={Timer}         label="Actual Running"      value={formatHM(actualRunningMinutes)} tone="teal" />
+            <KpiCard icon={TrendingUp}    label="Avg Rate / hr"       value={avgRatePerHour}           tone="cyan" />
+            <KpiCard icon={Users}         label="Manpower Shortage"   value={shortageManpower}         tone={shortageManpower > 0 ? "red" : "green"} />
           </div>
         </div>
       </div>
@@ -1917,24 +1927,6 @@ export default function UserProductionPage() {
             ) : (
               <div className="text-center py-3 text-slate-400 text-xs">No consumables added yet</div>
             )}
-          </div>
-        </div>
-
-        {/* ─── 7. FINAL SUMMARY KPIs ───────────────────── */}
-        <div>
-          <div className="flex items-center gap-2 mb-2.5">
-            <TrendingUp size={14} className="text-slate-600" />
-            <h2 className="text-xs font-bold text-slate-600 uppercase tracking-wider m-0">Final Summary</h2>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
-            <KpiCard icon={Package}       label="Total Production"    value={productionTotals}         tone="blue" />
-            <KpiCard icon={ShieldAlert}   label="Total Reject"        value={defectTotals.reject}      tone="red" />
-            <KpiCard icon={RotateCcw}     label="Total Rework"        value={defectTotals.rework}      tone="amber" />
-            <KpiCard icon={AlertTriangle} label="Total Defects"       value={defectTotals.total}       tone="slate" />
-            <KpiCard icon={Clock3}        label="Downtime (min)"      value={downtimeTotals.total}     tone="purple" />
-            <KpiCard icon={Timer}         label="Actual Running"      value={formatHM(actualRunningMinutes)} tone="teal" />
-            <KpiCard icon={TrendingUp}    label="Avg Rate / hr"       value={avgRatePerHour}           tone="cyan" />
-            <KpiCard icon={Users}         label="Manpower Shortage"   value={shortageManpower}         tone={shortageManpower > 0 ? "red" : "green"} />
           </div>
         </div>
 

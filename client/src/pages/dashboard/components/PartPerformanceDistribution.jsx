@@ -3,7 +3,8 @@ import { ResponsiveContainer, Treemap, Tooltip } from "recharts";
 import { Grid3x3 } from "lucide-react";
 import { useDashboard } from "../../../context/DashboardContext";
 
-const PALETTE = ["#2563eb", "#0d9488", "#f59e0b", "#7c3aed", "#dc2626", "#db2777", "#16a34a", "#64748b"];
+const PALETTE = ["#2563eb", "#0d9488", "#f59e0b", "#7c3aed", "#dc2626", "#db2777", "#16a34a", "#0891b2", "#ca8a04", "#4f46e5", "#059669", "#e11d48", "#0284c7", "#a16207"];
+const OTHER_COLOR = "#94a3b8";
 
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
@@ -17,19 +18,26 @@ const CustomTooltip = ({ active, payload }) => {
   );
 };
 
-const CustomCell = ({ x, y, width, height, index, partName, quantity }) => {
-  const color = PALETTE[index % PALETTE.length];
-  const showLabel = width > 45 && height > 30;
+const CustomCell = ({ x, y, width, height, index, partName, quantity, isOther }) => {
+  const color = isOther ? OTHER_COLOR : PALETTE[index % PALETTE.length];
+  const showLabel = width > 48 && height > 32;
   return (
     <g>
-      <rect x={x} y={y} width={width} height={height} fill={color} stroke="#fff" strokeWidth={1.5} rx={2} />
+      <rect
+        x={x} y={y} width={width} height={height}
+        fill={color}
+        stroke="#fff"
+        strokeWidth={1.5}
+        rx={3}
+        style={isOther ? { fillOpacity: 0.85 } : undefined}
+      />
       {showLabel && (
-        <text x={x + 5} y={y + 14} fill="#fff" fontSize={10} fontWeight={700}>
-          {partName?.length > 12 ? `${partName.slice(0, 12)}…` : partName}
+        <text x={x + 6} y={y + 15} fill="#fff" fontSize={10.5} fontWeight={700}>
+          {partName?.length > 13 ? `${partName.slice(0, 13)}…` : partName}
         </text>
       )}
       {showLabel && (
-        <text x={x + 5} y={y + 27} fill="#fff" fontSize={9} opacity={0.85}>
+        <text x={x + 6} y={y + 28} fill="#fff" fontSize={9.5} opacity={0.9}>
           {quantity?.toLocaleString()}
         </text>
       )}
@@ -39,8 +47,9 @@ const CustomCell = ({ x, y, width, height, index, partName, quantity }) => {
 
 const PartPerformanceDistribution = () => {
   const { partPerformanceDistribution, modelPartLoading } = useDashboard() || {};
+  const { parts = [], totalPartCount = 0 } = partPerformanceDistribution || {};
 
-  const data = (partPerformanceDistribution || []).map((p) => ({ ...p, size: p.quantity }));
+  const data = parts.map((p) => ({ ...p, size: p.quantity }));
   const hasData = data.length > 0;
 
   return (
@@ -49,7 +58,9 @@ const PartPerformanceDistribution = () => {
         <Grid3x3 size={14} className="text-amber-600" />
         <div>
           <h3 className="text-[13px] font-semibold text-slate-700 leading-tight">Part Performance Distribution</h3>
-          <p className="text-[10px] text-slate-400">Production Volume Map</p>
+          <p className="text-[10px] text-slate-400">
+            {totalPartCount > 14 ? `Top 14 of ${totalPartCount} parts` : "Production Volume Map"}
+          </p>
         </div>
       </div>
 
@@ -59,7 +70,7 @@ const PartPerformanceDistribution = () => {
         <div className="flex-1 flex items-center justify-center text-slate-400 text-xs">No production data available</div>
       ) : (
         <ResponsiveContainer width="100%" height={240}>
-          <Treemap data={data} dataKey="size" stroke="#fff" content={<CustomCell />} />
+          <Treemap data={data} dataKey="size" stroke="#fff" isAnimationActive={false} content={<CustomCell />} />
         </ResponsiveContainer>
       )}
     </div>

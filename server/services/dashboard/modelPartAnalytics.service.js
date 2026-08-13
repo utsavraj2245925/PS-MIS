@@ -4,9 +4,14 @@ import Model from "../../models/models.model.js"; // ⚠️ confirm this filenam
 import Part from "../../models/parts.model.js";
 import { buildEntryQuery } from "./roleScope.util.js";
 
-// Shared aggregation #1 — groups every production row across matching
-// entries by modelId, sums productionQty, sorted descending. Feeds both
-// getTopModels() and getModelProductionContribution().
+// Stronger normalization than a plain trim/uppercase — strips ALL
+// non-alphanumeric characters (spaces, hyphens, quotes) so genuinely
+// identical names typed inconsistently ("SIDE-RH" vs "SIDE RH") merge
+// into one entry. Names that differ by actual words ("Model 20" vs
+// 'Model 20 "POLAR"') still stay separate since the extra letters
+// remain in the key.
+const normalizeKey = (name) => name.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+
 const getModelBreakdown = async (user, filters = {}) => {
   const { query } = await buildEntryQuery(user, filters);
 
@@ -21,16 +26,22 @@ const getModelBreakdown = async (user, filters = {}) => {
   const models = await Model.find({ _id: { $in: modelIds } }).select("modelName").lean();
   const nameById = Object.fromEntries(models.map((m) => [String(m._id), m.modelName]));
 
-  return grouped.map((g) => ({
-    modelId: g._id ? String(g._id) : "unknown",
-    modelName: g._id ? (nameById[String(g._id)] || "Unknown Model") : "Unspecified",
-    quantity: g.quantity,
-  }));
+  const mergedByName = {};
+  grouped.forEach((g) => {
+    const id = g._id ? String(g._id) : null;
+    const name = id ? nameById[id] : null;
+    if (!name) return; // model deleted / no longer exists in Model Master — drop it
+
+    const key = normalizeKey(name);
+    if (!mergedByName[key]) {
+      mergedByName[key] = { modelId: id, modelName: name.trim(), quantity: 0 };
+    }
+    mergedByName[key].quantity += g.quantity;
+  });
+
+  return Object.values(mergedByName).sort((a, b) => b.quantity - a.quantity);
 };
 
-// Shared aggregation #2 — groups by partId, optionally scoped to one
-// model. Feeds both getTopParts() (with modelId) and
-// getPartPerformanceDistribution() (without — always full scope).
 const getPartBreakdown = async (user, filters = {}, modelId = null) => {
   const { query } = await buildEntryQuery(user, filters);
 
@@ -56,12 +67,25 @@ const getPartBreakdown = async (user, filters = {}, modelId = null) => {
   const partNameById = Object.fromEntries(parts.map((p) => [String(p._id), p.partName]));
   const modelNameById = Object.fromEntries(models.map((m) => [String(m._id), m.modelName]));
 
-  return grouped.map((g) => ({
-    partId: g._id ? String(g._id) : "unknown",
-    partName: g._id ? (partNameById[String(g._id)] || "Unknown Part") : "Unspecified",
-    modelName: g.modelId ? (modelNameById[String(g.modelId)] || "") : "",
-    quantity: g.quantity,
-  }));
+  const mergedByName = {};
+  grouped.forEach((g) => {
+    const partId = g._id ? String(g._id) : null;
+    const partName = partId ? partNameById[partId] : null;
+    if (!partName) return; // part deleted / no longer in Part Master — drop it
+
+    const key = normalizeKey(partName);
+    if (!mergedByName[key]) {
+      mergedByName[key] = {
+        partId,
+        partName: partName.trim(),
+        modelName: g.modelId ? (modelNameById[String(g.modelId)] || "") : "",
+        quantity: 0,
+      };
+    }
+    mergedByName[key].quantity += g.quantity;
+  });
+
+  return Object.values(mergedByName).sort((a, b) => b.quantity - a.quantity);
 };
 
 export const getTopModels = async (user, filters = {}) => {
@@ -100,6 +124,28 @@ export const getModelProductionContribution = async (user, filters = {}) => {
   return { total, models };
 };
 
+// Capped to top 14 + "Other" bucket — same pattern as the donut chart's
+// top-6-plus-Other. Without a cap, a plant with 25+ distinct parts
+// produces a wall of tiny, label-less rectangles that look broken
+// rather than informative. This keeps every visible cell big enough
+// to actually read.
 export const getPartPerformanceDistribution = async (user, filters = {}) => {
-  return getPartBreakdown(user, filters, null);
+  const breakdown = await getPartBreakdown(user, filters, null);
+
+  const TOP_N = 14;
+  const top = breakdown.slice(0, TOP_N);
+  const rest = breakdown.slice(TOP_N);
+  const restQty = rest.reduce((s, p) => s + p.quantity, 0);
+
+  if (restQty > 0) {
+    top.push({
+      partId: "other",
+      partName: `Other (${rest.length})`,
+      modelName: "",
+      quantity: restQty,
+      isOther: true,
+    });
+  }
+
+  return { parts: top, totalPartCount: breakdown.length };
 };

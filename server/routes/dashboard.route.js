@@ -14,6 +14,20 @@ import {
   getTopParts,
   getModelProductionContribution,
   getPartPerformanceDistribution,
+  getPowderConsumption,
+  getUsefulItems,
+  getChemicalConsumption,
+  getDowntimeTrend,
+  getDowntimeTypeDistribution,
+  getTopDowntimeReasons,
+  getDowntimePareto,
+  getManpowerTrend,
+  getManpowerDistribution,
+  getManpowerShortageByShift,
+  getShiftProductionPerformance,
+  getShiftOEEPerformance,
+  getShiftQualityPerformance,
+  getShiftDowntimePerformance,
 } from "../controllers/dashboard.controller.js";
 import { isAuthenticated } from "../Auth/isAuthenticated.js";
 
@@ -33,5 +47,21 @@ router.get("/top-models", isAuthenticated, getTopModels);
 router.get("/top-parts", isAuthenticated, getTopParts);
 router.get("/model-production-contribution", isAuthenticated, getModelProductionContribution);
 router.get("/part-performance-distribution", isAuthenticated, getPartPerformanceDistribution);
+router.get("/powder-consumption", isAuthenticated, getPowderConsumption);
+router.get("/useful-items", isAuthenticated, getUsefulItems);
+router.get("/chemical-consumption", isAuthenticated, getChemicalConsumption);
+
+router.get("/downtime-trend", isAuthenticated, getDowntimeTrend);
+router.get("/downtime-type-distribution", isAuthenticated, getDowntimeTypeDistribution);
+router.get("/top-downtime-reasons", isAuthenticated, getTopDowntimeReasons);
+router.get("/downtime-pareto", isAuthenticated, getDowntimePareto);
+
+router.get("/manpower-trend", isAuthenticated, getManpowerTrend);
+router.get("/manpower-distribution", isAuthenticated, getManpowerDistribution);
+router.get("/manpower-shortage-by-shift", isAuthenticated, getManpowerShortageByShift);
+router.get("/shift-production-performance", isAuthenticated, getShiftProductionPerformance);
+router.get("/shift-oee-performance", isAuthenticated, getShiftOEEPerformance);
+router.get("/shift-quality-performance", isAuthenticated, getShiftQualityPerformance);
+router.get("/shift-downtime-performance", isAuthenticated, getShiftDowntimePerformance);
 
 export default router;

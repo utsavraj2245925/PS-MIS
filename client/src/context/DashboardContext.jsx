@@ -15,6 +15,7 @@ export const DashboardProvider = ({ children }) => {
   const [conveyors, setConveyors] = useState([]);
   const [cards, setCards] = useState({});
   const [loading, setLoading] = useState(true);
+  const [navHeight, setNavHeight] = useState(60);
 
   const [productionTrend, setProductionTrend] = useState([]);
   const [achievementTrend, setAchievementTrend] = useState([]);
@@ -31,9 +32,34 @@ export const DashboardProvider = ({ children }) => {
   const [topModels, setTopModels] = useState([]);
   const [topParts, setTopParts] = useState([]);
   const [modelProductionContribution, setModelProductionContribution] = useState({ total: 0, models: [] });
-  const [partPerformanceDistribution, setPartPerformanceDistribution] = useState([]);
+  const [partPerformanceDistribution, setPartPerformanceDistribution] = useState({ parts: [], totalPartCount: 0 });
   const [modelPartLoading, setModelPartLoading] = useState(true);
   const [selectedPartModel, setSelectedPartModel] = useState("");
+
+  const [powderConsumption, setPowderConsumption] = useState({ materials: [], total: 0, unit: "" });
+  const [usefulItems, setUsefulItems] = useState({ materials: [], total: 0, unit: "" });
+  const [chemicalConsumption, setChemicalConsumption] = useState({ materials: [], total: 0, unit: "" });
+  const [paintShopLoading, setPaintShopLoading] = useState(true);
+  const [selectedPowderMaterial, setSelectedPowderMaterial] = useState("");
+  const [selectedUsefulItemMaterial, setSelectedUsefulItemMaterial] = useState("");
+  const [selectedChemicalMaterial, setSelectedChemicalMaterial] = useState("");
+
+  const [downtimeTrend, setDowntimeTrend] = useState([]);
+  const [downtimeTypeDistribution, setDowntimeTypeDistribution] = useState({ total: 0, types: [] });
+  const [topDowntimeReasons, setTopDowntimeReasons] = useState([]);
+  const [downtimePareto, setDowntimePareto] = useState([]);
+  const [downtimeLoading, setDowntimeLoading] = useState(true);
+
+  const [manpowerTrend, setManpowerTrend] = useState([]);
+  const [manpowerDistribution, setManpowerDistribution] = useState({ required: 0, parts: [] });
+  const [manpowerShortageByShift, setManpowerShortageByShift] = useState([]);
+  const [manpowerLoading, setManpowerLoading] = useState(true);
+
+  const [shiftProductionPerformance, setShiftProductionPerformance] = useState([]);
+  const [shiftOEEPerformance, setShiftOEEPerformance] = useState([]);
+  const [shiftQualityPerformance, setShiftQualityPerformance] = useState([]);
+  const [shiftDowntimePerformance, setShiftDowntimePerformance] = useState([]);
+  const [shiftLoading, setShiftLoading] = useState(true);
 
   const [datePreset, setDatePreset] = useState("today");
   const [dateRange, setDateRange] = useState(() => DATE_PRESETS.find((p) => p.key === "today").range());
@@ -202,13 +228,155 @@ export const DashboardProvider = ({ children }) => {
 
       setTopModels(modelsRes.data.data || []);
       setModelProductionContribution(contributionRes.data.data || { total: 0, models: [] });
-      setPartPerformanceDistribution(distributionRes.data.data || []);
+      setPartPerformanceDistribution(distributionRes.data.data || { parts: [], totalPartCount: 0 });
 
       await fetchTopParts(selectedPartModel);
     } catch (error) {
       console.error(error);
     } finally {
       setModelPartLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
+  const commonParams = () => ({
+    locationId: filters.locationId,
+    plantId: filters.plantId,
+    shiftId: filters.shiftId,
+    conveyorId: filters.conveyorId,
+    fromDate: dateRange[0]?.startOf("day").toISOString(),
+    toDate: dateRange[1]?.endOf("day").toISOString(),
+  });
+
+  const fetchPowderConsumption = useCallback(async (materialId) => {
+    try {
+      const res = await axiosInstance.get("/dashboard/powder-consumption", { params: { ...commonParams(), materialId: materialId || undefined } });
+      setPowderConsumption(res.data.data || { materials: [], total: 0, unit: "" });
+    } catch (error) { console.error(error); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
+  const fetchUsefulItems = useCallback(async (materialId) => {
+    try {
+      const res = await axiosInstance.get("/dashboard/useful-items", { params: { ...commonParams(), materialId: materialId || undefined } });
+      setUsefulItems(res.data.data || { materials: [], total: 0, unit: "" });
+    } catch (error) { console.error(error); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
+  const fetchChemicalConsumption = useCallback(async (materialId) => {
+    try {
+      const res = await axiosInstance.get("/dashboard/chemical-consumption", { params: { ...commonParams(), materialId: materialId || undefined } });
+      setChemicalConsumption(res.data.data || { materials: [], total: 0, unit: "" });
+    } catch (error) { console.error(error); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
+  const handlePowderMaterialChange = (materialId) => { setSelectedPowderMaterial(materialId); fetchPowderConsumption(materialId); };
+  const handleUsefulItemMaterialChange = (materialId) => { setSelectedUsefulItemMaterial(materialId); fetchUsefulItems(materialId); };
+  const handleChemicalMaterialChange = (materialId) => { setSelectedChemicalMaterial(materialId); fetchChemicalConsumption(materialId); };
+
+  const fetchPaintShopAnalytics = useCallback(async () => {
+    setPaintShopLoading(true);
+    try {
+      await Promise.all([
+        fetchPowderConsumption(selectedPowderMaterial),
+        fetchUsefulItems(selectedUsefulItemMaterial),
+        fetchChemicalConsumption(selectedChemicalMaterial),
+      ]);
+    } finally {
+      setPaintShopLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
+  const fetchDowntimeAnalytics = useCallback(async () => {
+    setDowntimeLoading(true);
+    try {
+      const params = {
+        locationId: filters.locationId,
+        plantId: filters.plantId,
+        shiftId: filters.shiftId,
+        conveyorId: filters.conveyorId,
+        fromDate: dateRange[0]?.startOf("day").toISOString(),
+        toDate: dateRange[1]?.endOf("day").toISOString(),
+      };
+
+      const [trendRes, distributionRes, reasonsRes, paretoRes] = await Promise.all([
+        axiosInstance.get("/dashboard/downtime-trend", { params }),
+        axiosInstance.get("/dashboard/downtime-type-distribution", { params }),
+        axiosInstance.get("/dashboard/top-downtime-reasons", { params }),
+        axiosInstance.get("/dashboard/downtime-pareto", { params }),
+      ]);
+
+      setDowntimeTrend(trendRes.data.data || []);
+      setDowntimeTypeDistribution(distributionRes.data.data || { total: 0, types: [] });
+      setTopDowntimeReasons(reasonsRes.data.data || []);
+      setDowntimePareto(paretoRes.data.data || []);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setDowntimeLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
+  const fetchManpowerAnalytics = useCallback(async () => {
+    setManpowerLoading(true);
+    try {
+      const params = {
+        locationId: filters.locationId,
+        plantId: filters.plantId,
+        shiftId: filters.shiftId,
+        conveyorId: filters.conveyorId,
+        fromDate: dateRange[0]?.startOf("day").toISOString(),
+        toDate: dateRange[1]?.endOf("day").toISOString(),
+      };
+
+      const [trendRes, distributionRes, shortageRes] = await Promise.all([
+        axiosInstance.get("/dashboard/manpower-trend", { params }),
+        axiosInstance.get("/dashboard/manpower-distribution", { params }),
+        axiosInstance.get("/dashboard/manpower-shortage-by-shift", { params }),
+      ]);
+
+      setManpowerTrend(trendRes.data.data || []);
+      setManpowerDistribution(distributionRes.data.data || { required: 0, parts: [] });
+      setManpowerShortageByShift(shortageRes.data.data || []);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setManpowerLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
+
+  const fetchShiftAnalytics = useCallback(async () => {
+    setShiftLoading(true);
+    try {
+      const params = {
+        locationId: filters.locationId,
+        plantId: filters.plantId,
+        shiftId: filters.shiftId,
+        conveyorId: filters.conveyorId,
+        fromDate: dateRange[0]?.startOf("day").toISOString(),
+        toDate: dateRange[1]?.endOf("day").toISOString(),
+      };
+
+      const [prodRes, oeeRes, qualityRes, downtimeRes] = await Promise.all([
+        axiosInstance.get("/dashboard/shift-production-performance", { params }),
+        axiosInstance.get("/dashboard/shift-oee-performance", { params }),
+        axiosInstance.get("/dashboard/shift-quality-performance", { params }),
+        axiosInstance.get("/dashboard/shift-downtime-performance", { params }),
+      ]);
+
+      setShiftProductionPerformance(prodRes.data.data || []);
+      setShiftOEEPerformance(oeeRes.data.data || []);
+      setShiftQualityPerformance(qualityRes.data.data || []);
+      setShiftDowntimePerformance(downtimeRes.data.data || []);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setShiftLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange]);
@@ -221,6 +389,10 @@ export const DashboardProvider = ({ children }) => {
     fetchTrends();
     fetchQualityAnalytics();
     fetchModelPartAnalytics();
+    fetchPaintShopAnalytics();
+    fetchDowntimeAnalytics();
+    fetchManpowerAnalytics();
+    fetchShiftAnalytics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, filters.locationId, filters.plantId, filters.shiftId, filters.conveyorId, dateRange[0]?.valueOf(), dateRange[1]?.valueOf()]);
 
@@ -230,10 +402,17 @@ export const DashboardProvider = ({ children }) => {
         filters, setFilters, locations, plants, shifts, conveyors,
         cards, loading, datePreset, dateRange,
         onPresetChange, onCustomRangeChange, onRefresh: fetchSummary,
+        navHeight, setNavHeight,
         productionTrend, achievementTrend, productionRateTrend, oeeTrend, trendLoading,
         qualityTrend, qualityPerformanceTrend, defectDistribution, defectPareto, qualityLoading,
         topModels, topParts, modelProductionContribution, partPerformanceDistribution,
         modelPartLoading, selectedPartModel, handlePartModelChange,
+        powderConsumption, usefulItems, chemicalConsumption, paintShopLoading,
+        selectedPowderMaterial, selectedUsefulItemMaterial, selectedChemicalMaterial,
+        handlePowderMaterialChange, handleUsefulItemMaterialChange, handleChemicalMaterialChange,
+        downtimeTrend, downtimeTypeDistribution, topDowntimeReasons, downtimePareto, downtimeLoading,
+        manpowerTrend, manpowerDistribution, manpowerShortageByShift, manpowerLoading,
+        shiftProductionPerformance, shiftOEEPerformance, shiftQualityPerformance, shiftDowntimePerformance, shiftLoading,
       }}
     >
       {children}

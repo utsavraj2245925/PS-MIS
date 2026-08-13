@@ -4,6 +4,7 @@ import {
   Ruler, ShieldAlert, RotateCcw, Clock3, Users, Layers,
 } from "lucide-react";
 import KPICard from "./KPICard";
+import { useDashboard } from "../../../context/DashboardContext";
 
 const getTone = (value, mode) => {
   const v = Number(value || 0);
@@ -28,6 +29,8 @@ const formatPaintedArea = (value) => {
 };
 
 const ExecutiveKPICards = ({ cards = {} }) => {
+  const { navHeight } = useDashboard() || {};
+
   const items = [
     { icon: Target,        label: "Target",             value: (cards.target || 0).toLocaleString(),      tone: "teal" },
     { icon: Package,       label: "Produced",            value: (cards.production || 0).toLocaleString(),  tone: "blue" },
@@ -45,10 +48,20 @@ const ExecutiveKPICards = ({ cards = {} }) => {
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-2">
-      {items.map((item) => (
-        <KPICard key={item.label} {...item} />
-      ))}
+    <div
+      className="sticky z-30 bg-slate-100 pb-2"
+      style={{ top: navHeight ?? 60 }}
+    >
+      <div className="overflow-x-auto">
+        <div
+          className="grid gap-1.5 xl:gap-2"
+          style={{ gridTemplateColumns: "repeat(13, minmax(70px, 1fr))", minWidth: 13 * 70 }}
+        >
+          {items.map((item) => (
+            <KPICard key={item.label} {...item} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 };

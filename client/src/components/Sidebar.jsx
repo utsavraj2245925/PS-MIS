@@ -125,7 +125,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
               }`}
             >
               <CheckCircle size={15} />
-              {!collapsed && <span className="text-[10px]">Quality</span>}
+              {!collapsed && <span className="text-[10px]">Live Analysis</span>}
             </button>
           </li>
 

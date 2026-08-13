@@ -20,6 +20,28 @@ import {
   getModelProductionContribution as getModelProductionContributionService,
   getPartPerformanceDistribution as getPartPerformanceDistributionService,
 } from "../services/dashboard/modelPartAnalytics.service.js";
+import {
+  getPowderConsumption as getPowderConsumptionService,
+  getUsefulItems as getUsefulItemsService,
+  getChemicalConsumption as getChemicalConsumptionService,
+} from "../services/dashboard/paintShopAnalytics.service.js";
+import {
+  getDailyDowntimeSeries as getDailyDowntimeSeriesService,
+  getDowntimeTypeDistribution as getDowntimeTypeDistributionService,
+  getTopDowntimeReasons as getTopDowntimeReasonsService,
+  getDowntimePareto as getDowntimeParetoService,
+} from "../services/dashboard/downtimeAnalytics.service.js";
+import {
+  getManpowerDailySeries as getManpowerDailySeriesService,
+  getManpowerDistribution as getManpowerDistributionService,
+  getManpowerShortageByShift as getManpowerShortageByShiftService,
+} from "../services/dashboard/manpowerAnalytics.service.js";
+import {
+  getShiftProductionPerformance as getShiftProductionPerformanceService,
+  getShiftOEEPerformance as getShiftOEEPerformanceService,
+  getShiftQualityPerformance as getShiftQualityPerformanceService,
+  getShiftDowntimePerformance as getShiftDowntimePerformanceService,
+} from "../services/dashboard/shiftAnalytics.service.js";
 
 const extractConveyors = (plants = []) => {
   const conveyors = [];
@@ -240,5 +262,145 @@ export const getPartPerformanceDistribution = async (req, res) => {
   } catch (error) {
     console.error("PART DISTRIBUTION ERROR:", error);
     return res.status(500).json({ success: false, message: error.message || "Failed to fetch part performance distribution" });
+  }
+};
+
+export const getPowderConsumption = async (req, res) => {
+  try {
+    const data = await getPowderConsumptionService(req.user, extractFilters(req), req.query.materialId || null);
+    return res.status(200).json({ success: true, message: "Powder consumption fetched successfully", data });
+  } catch (error) {
+    console.error("POWDER CONSUMPTION ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch powder consumption" });
+  }
+};
+
+export const getUsefulItems = async (req, res) => {
+  try {
+    const data = await getUsefulItemsService(req.user, extractFilters(req), req.query.materialId || null);
+    return res.status(200).json({ success: true, message: "Useful items fetched successfully", data });
+  } catch (error) {
+    console.error("USEFUL ITEMS ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch useful items" });
+  }
+};
+
+export const getChemicalConsumption = async (req, res) => {
+  try {
+    const data = await getChemicalConsumptionService(req.user, extractFilters(req), req.query.materialId || null);
+    return res.status(200).json({ success: true, message: "Chemical consumption fetched successfully", data });
+  } catch (error) {
+    console.error("CHEMICAL CONSUMPTION ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch chemical consumption" });
+  }
+};
+
+export const getDowntimeTrend = async (req, res) => {
+  try {
+    const data = await getDailyDowntimeSeriesService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Downtime trend fetched successfully", data });
+  } catch (error) {
+    console.error("DOWNTIME TREND ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch downtime trend" });
+  }
+};
+
+export const getDowntimeTypeDistribution = async (req, res) => {
+  try {
+    const data = await getDowntimeTypeDistributionService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Downtime type distribution fetched successfully", data });
+  } catch (error) {
+    console.error("DOWNTIME TYPE DISTRIBUTION ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch downtime type distribution" });
+  }
+};
+
+export const getTopDowntimeReasons = async (req, res) => {
+  try {
+    const data = await getTopDowntimeReasonsService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Top downtime reasons fetched successfully", data });
+  } catch (error) {
+    console.error("TOP DOWNTIME REASONS ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch top downtime reasons" });
+  }
+};
+
+export const getDowntimePareto = async (req, res) => {
+  try {
+    const data = await getDowntimeParetoService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Downtime pareto fetched successfully", data });
+  } catch (error) {
+    console.error("DOWNTIME PARETO ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch downtime pareto" });
+  }
+};
+
+// Add these 3 handlers at the very end of the file
+export const getManpowerTrend = async (req, res) => {
+  try {
+    const data = await getManpowerDailySeriesService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Manpower trend fetched successfully", data });
+  } catch (error) {
+    console.error("MANPOWER TREND ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch manpower trend" });
+  }
+};
+
+export const getManpowerDistribution = async (req, res) => {
+  try {
+    const data = await getManpowerDistributionService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Manpower distribution fetched successfully", data });
+  } catch (error) {
+    console.error("MANPOWER DISTRIBUTION ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch manpower distribution" });
+  }
+};
+
+export const getManpowerShortageByShift = async (req, res) => {
+  try {
+    const data = await getManpowerShortageByShiftService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Manpower shortage by shift fetched successfully", data });
+  } catch (error) {
+    console.error("MANPOWER SHORTAGE BY SHIFT ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch manpower shortage by shift" });
+  }
+};
+export const getShiftProductionPerformance = async (req, res) => {
+  try {
+    const data = await getShiftProductionPerformanceService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Shift production performance fetched successfully", data });
+  } catch (error) {
+    console.error("SHIFT PRODUCTION PERFORMANCE ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch shift production performance" });
+  }
+};
+
+export const getShiftOEEPerformance = async (req, res) => {
+  try {
+    const data = await getShiftOEEPerformanceService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Shift OEE performance fetched successfully", data });
+  } catch (error) {
+    console.error("SHIFT OEE PERFORMANCE ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch shift OEE performance" });
+  }
+};
+
+export const getShiftQualityPerformance = async (req, res) => {
+  try {
+    const data = await getShiftQualityPerformanceService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Shift quality performance fetched successfully", data });
+  } catch (error) {
+    console.error("SHIFT QUALITY PERFORMANCE ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch shift quality performance" });
+  }
+};
+
+export const getShiftDowntimePerformance = async (req, res) => {
+  try {
+    const data = await getShiftDowntimePerformanceService(req.user, extractFilters(req));
+    return res.status(200).json({ success: true, message: "Shift downtime performance fetched successfully", data });
+  } catch (error) {
+    console.error("SHIFT DOWNTIME PERFORMANCE ERROR:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to fetch shift downtime performance" });
   }
 };
