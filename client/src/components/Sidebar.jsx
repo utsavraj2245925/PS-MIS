@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Clock3,
   Workflow,
+  Activity,
 } from "lucide-react";
 
 export default function Sidebar({ collapsed, setCollapsed }) {

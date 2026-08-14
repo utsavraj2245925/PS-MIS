@@ -6,7 +6,6 @@ import { DashboardProvider } from "../context/DashboardContext";
 
 export default function DashboardLayout({ children }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [navHeight, setNavHeight] = useState(60);
 
   return (
     <DashboardProvider>
@@ -14,9 +13,9 @@ export default function DashboardLayout({ children }) {
         <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
 
         <div className={`transition-all duration-300 ${collapsed ? "ml-[51px]" : "ml-[162px]"}`}>
-          <Navbar collapsed={collapsed} onHeightChange={setNavHeight} />
+          <Navbar collapsed={collapsed} />
 
-          <main style={{ paddingTop: navHeight }} className="px-[14px] pb-[14px] lg:px-[20px]">
+          <main className="px-[14px] pb-[14px] pt-[14px] lg:px-[20px]">
             <div className="w-full overflow-x-auto">{children}</div>
           </main>
         </div>

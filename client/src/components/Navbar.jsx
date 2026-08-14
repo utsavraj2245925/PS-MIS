@@ -69,9 +69,7 @@ export default function Navbar({ collapsed, onHeightChange }) {
   return (
     <header
       ref={headerRef}
-      className={`fixed top-0 right-0 bg-white border-b border-slate-200 z-40 transition-all duration-300 ${
-        collapsed ? "left-[51px]" : "left-[162px]"
-      }`}
+      className="sticky top-0 z-40 bg-white border-b border-slate-200 w-full"
     >
       <div
         className={`flex items-center gap-2 lg:gap-3 px-3 lg:px-[17px] ${

@@ -48,19 +48,13 @@ const ExecutiveKPICards = ({ cards = {} }) => {
   ];
 
   return (
-    <div
-      className="sticky z-30 bg-slate-100 pb-2"
-      style={{ top: navHeight ?? 60 }}
-    >
-      <div className="overflow-x-auto">
-        <div
-          className="grid gap-1.5 xl:gap-2"
-          style={{ gridTemplateColumns: "repeat(13, minmax(70px, 1fr))", minWidth: 13 * 70 }}
-        >
-          {items.map((item) => (
-            <KPICard key={item.label} {...item} />
-          ))}
-        </div>
+    <div className="sticky z-30 bg-slate-100 pb-2" style={{ top: navHeight ?? 60 }}>
+      <div className="flex flex-nowrap gap-1 xl:gap-1.5 2xl:gap-2 w-full min-w-0">
+        {items.map((item) => (
+          <div key={item.label} className="flex-1 min-w-0 basis-0">
+            <KPICard {...item} />
+          </div>
+        ))}
       </div>
     </div>
   );
