@@ -16,8 +16,10 @@ import ManageConveyorPage from "./pages/ManageConveyorPage";
 import ProductionEntryPage from "./pages/ProductionEntryPage";
 import UserProductionPage from "./pages/UserProductionPage";
 import ProductionRecordsPage from "./pages/ProductionRecordPage";
+import ReportsPage from "./pages/ReportsPage";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
+
 
 
 function App() {
@@ -155,6 +157,25 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+                <Route
+          path="/reports"
+          element={
+            <ProtectedRoute allowedRoles={[
+              "SUPER_ADMIN",
+              "superAdmin",
+              "PLANT_ADMIN",
+              "plantAdmin",
+              "MANAGER",
+              "manager",
+            ]}>
+              <DashboardLayout>
+                <ReportsPage />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        
 
         {/* PRODUCTION ENTRY — all roles allowed, but USER gets a different UI */}
         <Route

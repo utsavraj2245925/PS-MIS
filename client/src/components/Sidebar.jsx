@@ -49,6 +49,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
   };
 
   const menuItems = allMenus[user?.role] || [];
+  const canViewReports = ["superAdmin", "plantAdmin", "manager"].includes(user?.role);
 
   return (
     <aside
@@ -130,16 +131,23 @@ export default function Sidebar({ collapsed, setCollapsed }) {
             </button>
           </li>
 
-          <li>
-            <button
-              className={`w-full flex items-center rounded-lg text-slate-300 hover:bg-slate-800 transition-all ${
-                collapsed ? "justify-center h-[34px]" : "gap-[10px] px-[10px] h-[34px]"
-              }`}
-            >
-              <BarChart3 size={15} />
-              {!collapsed && <span className="text-[10px]">Reports</span>}
-            </button>
-          </li>
+                    {canViewReports && (
+            <li>
+              <Link
+                to="/reports"
+                className={`w-full flex items-center rounded-lg transition-all ${
+                  collapsed ? "justify-center h-[34px]" : "gap-[10px] px-[10px] h-[34px]"
+                } ${
+                  location.pathname === "/reports"
+                    ? "bg-cyan-700 text-white"
+                    : "text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                <BarChart3 size={15} />
+                {!collapsed && <span className="text-[10px]">Reports</span>}
+              </Link>
+            </li>
+          )}
 
           <li>
             <button

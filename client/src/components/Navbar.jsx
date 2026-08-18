@@ -14,8 +14,16 @@ export default function Navbar({ collapsed, onHeightChange }) {
   const dashboard = useDashboard();
   const headerRef = useRef(null);
 
-  const isDashboardRoute = location.pathname === "/" || location.pathname === "/dashboard";
-  const showFilters = isDashboardRoute && user?.role && user.role !== "user" && dashboard;
+  const isDashboardRoute =
+  location.pathname === "/" || location.pathname === "/dashboard";
+
+  const isReportsRoute = location.pathname === "/reports";
+
+  const showFilters =
+    (isDashboardRoute || isReportsRoute) &&
+    user?.role &&
+    user.role !== "user" &&
+    dashboard;
 
   // Report the header's real rendered height, live — both up to
   // DashboardLayout (for <main>'s padding-top) and into DashboardContext

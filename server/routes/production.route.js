@@ -2,6 +2,7 @@ import express from "express";
 
 import {
   createProductionEntry,
+  getProductionReport,
   getproductions,
   getSingleProductionEntry,
   updateProductionEntry,
@@ -38,6 +39,11 @@ router.post(
 router.get(
   "/",
   getproductions
+);
+
+router.get(
+  "/report",
+  getProductionReport
 );
 
 /* ==========================================

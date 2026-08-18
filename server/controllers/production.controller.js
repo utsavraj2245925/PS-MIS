@@ -13,6 +13,7 @@ import shift from "../models/shift.model.js";
 import defect from "../models/defects.model.js";
 import material from "../models/material.model.js"; 
 import location from "../models/location.model.js";
+import { buildEntryQuery } from "../services/dashboard/roleScope.util.js";
 
 /* ========================= POPULATE CONFIG ========================= */
 
@@ -231,6 +232,44 @@ export const createProductionEntry = async (req, res) => {
   }
 };
 
+/* ========================= GET Reports ========================= */
+export const getProductionReport = async (req, res) => {
+  try {
+    const { query } = await buildEntryQuery(req.user, req.query);
+
+    const entries = await ProductionEntry.find(query)
+      .populate(POPULATE)
+      .sort({ entryDate: -1, reportTime: -1 })
+      .lean();
+
+    const summary = entries.reduce(
+      (total, entry) => {
+        total.target += Number(entry.shiftSummary?.target || 0);
+        total.production += Number(entry.totalProductionQty || 0);
+        total.reject += Number(entry.totalRejectQty || 0);
+        total.rework += Number(entry.totalReworkQty || 0);
+        total.defects += Number(entry.totalDefectQty || 0);
+        total.downtime += Number(entry.totalDowntime || 0);
+        total.shortage += Number(entry.shortageManpower || 0);
+        return total;
+      },
+      { target: 0, production: 0, reject: 0, rework: 0, defects: 0, downtime: 0, shortage: 0 }
+    );
+
+    summary.achievement =
+      summary.target > 0
+        ? Number(((summary.production / summary.target) * 100).toFixed(2))
+        : 0;
+
+    return res.status(200).json({ success: true, data: entries, summary });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch production report",
+    });
+  }
+};
+
 /* ========================= GET ALL ========================= */
 
 export const getproductions = async (req, res) => {
@@ -331,12 +370,32 @@ export const updateProductionEntry = async (req, res) => {
 
 export const deleteProductionEntry = async (req, res) => {
   try {
-    const deletedEntry = await ProductionEntry.findByIdAndDelete(req.params.id);
-    if (!deletedEntry) return res.status(404).json({ success: false, message: "Production entry not found" });
+    // Only Super Admin can permanently delete a submitted production record.
+    if (req.user?.role !== "superAdmin") {
+      return res.status(403).json({
+        success: false,
+        message: "Only Super Admin can delete production entries",
+      });
+    }
 
-    return res.status(200).json({ success: true, message: "Production entry deleted successfully" });
+    const deletedEntry = await ProductionEntry.findByIdAndDelete(req.params.id);
+
+    if (!deletedEntry) {
+      return res.status(404).json({
+        success: false,
+        message: "Production entry not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Production entry deleted successfully",
+    });
   } catch (error) {
     console.error("DELETE PRODUCTION ENTRY ERROR:", error);
-    return res.status(500).json({ success: false, message: "Failed to delete production entry" });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete production entry",
+    });
   }
 };

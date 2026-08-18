@@ -118,7 +118,7 @@ function StatCard({ icon: Icon, label, value, sub, tone = "slate", loading }) {
 /* ─────────────────────────────────────────────────────────
    DETAIL MODAL
 ───────────────────────────────────────────────────────── */
-function RecordDetailModal({ record, open, onClose, plantStrengths = [] }) {
+export function RecordDetailModal({ record, open, onClose, plantStrengths = [] }) {
   if (!record) return null;
 
   const modalTarget = (() => {

@@ -43,12 +43,24 @@ export const buildEntryQuery = async (user, filters = {}) => {
     if (userPlantId) query.plantId = userPlantId;
     if (shiftId) query.shiftId = shiftId;
   } else if (user.role === "plantAdmin") {
-    if (plantId) {
-      query.plantId = plantId;
-    } else if (userLocationId) {
-      const plants = await Plant.find({ locationId: userLocationId }).select("_id").lean();
-      query.plantId = { $in: plants.map((p) => p._id) };
-    }
+  if (plantId) {
+    const permittedPlant = await Plant.findOne({
+      _id: plantId,
+      locationId: userLocationId,
+      status: "Active",
+    }).select("_id").lean();
+
+    query.plantId = permittedPlant
+      ? permittedPlant._id
+      : { $in: [] };
+  } else if (userLocationId) {
+    const plants = await Plant.find({
+      locationId: userLocationId,
+      status: "Active",
+    }).select("_id").lean();
+
+    query.plantId = { $in: plants.map((p) => p._id) };
+  }
     if (shiftId) query.shiftId = shiftId;
   } else if (user.role === "superAdmin") {
     if (plantId) {

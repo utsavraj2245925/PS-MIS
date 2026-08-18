@@ -15,8 +15,8 @@ export default function DashboardLayout({ children }) {
         <div className={`transition-all duration-300 ${collapsed ? "ml-[51px]" : "ml-[162px]"}`}>
           <Navbar collapsed={collapsed} />
 
-          <main className="px-[14px] pb-[14px] pt-[14px] lg:px-[20px]">
-            <div className="w-full overflow-x-auto">{children}</div>
+          <main className="px-[14px] pb-[14px] pt-0 lg:px-[20px]">
+            <div className="w-full">{children}</div>
           </main>
         </div>
       </div>
