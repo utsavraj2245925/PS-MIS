@@ -1,13 +1,20 @@
 import mongoose from "mongoose";
 import ProductionSession from "../models/productionSession.model.js";
-import TimeBlockConfiguration from "../models/timeBlockConfiguration.model.js";
-import ShiftRuntime from "../models/shiftRuntime.model.js";
 import Shift from "../models/shift.model.js";
 import ConveyorStrength from "../models/ConveyorStrength.model.js";
 import Model from "../models/models.model.js";
 import Part from "../models/parts.model.js";
 import User from "../models/users.model.js";
-import { calculateSessionTiming, calculateTimeBlockOverlap } from "../utils/productionTime.utils.js";
+import { calculateSessionTiming } from "../utils/productionTime.utils.js";
+
+import {
+  buildShiftTimeline,
+  getCurrentLiveBlock,
+  getUpcomingBlocks,
+  getShiftStatus,
+  calculateShiftElapsed,
+  calculateShiftRemaining,
+} from "../utils/liveBlock.utils.js";
 
 /* ========================================================
    BASIC HELPERS
@@ -161,9 +168,21 @@ export const startProductionSession = async ({
     error.statusCode = 400;
     throw error;
   }
+  
 
   const demandPerShift = num(strength?.demandPerShift);
-  const targetPerSession = demandPerShift;
+
+  const shiftTimeline = buildShiftTimeline({
+    shift: selectedShift,
+    baseDate: actualStartTime,
+  });
+
+  const actualWorkingMinutes = shiftTimeline.actualWorkingMinutes;
+
+  const targetPerHour =
+    actualWorkingMinutes > 0
+      ? round((demandPerShift / actualWorkingMinutes) * 60, 2)
+      : 0;
 
   const session = await ProductionSession.create({
     reportedBy: user._id,
@@ -198,7 +217,9 @@ export const startProductionSession = async ({
     averageProductionRate: 0,
 
     demandPerShift,
-    targetPerSession,
+
+    demandPerShift,
+    targetPerHour,
 
     achievementPercent: 0,
 
@@ -282,7 +303,12 @@ export const updateProductionSessionParts = async ({
   session.durationMinutes = timing.durationMinutes;
   session.downtimeMinutes = timing.downtimeMinutes;
   session.runningMinutes = timing.runningMinutes;
-  session.averageProductionRate = averageProductionRate;
+
+  session.averageProductionRatePerHour = round(
+    averageProductionRate * 60,
+    2
+  );
+
   session.achievementPercent = achievementPercent;
 
   await session.save();
@@ -330,9 +356,12 @@ export const updateProductionSessionDowntime = async ({
   session.runningMinutes = timing.runningMinutes;
   session.totalProductionQty = totalProductionQty;
 
-  session.averageProductionRate = calculateAverageRate(
-    totalProductionQty,
-    timing.runningMinutes,
+  session.averageProductionRatePerHour = round(
+    calculateAverageRate(
+      totalProductionQty,
+      timing.runningMinutes,
+    ) * 60,
+    2
   );
 
   session.achievementPercent = calculateAchievement(
@@ -458,16 +487,18 @@ export const completeProductionSession = async ({
     session.demandPerShift,
   );
 
-  let timeBlockOverlap = [];
+  const selectedShift = await Shift.findById(session.shiftId).lean();
 
-  if (session.timeBlockConfigurationId) {
-    timeBlockOverlap = await calculateTimeBlockOverlap({
-      configurationId: session.timeBlockConfigurationId,
-      startTime: session.startTime,
-      endTime: actualEndTime,
-      productionQty: totalProductionQty,
-    });
+  if (!selectedShift) {
+    const error = new Error("Shift not found for production session");
+    error.statusCode = 404;
+    throw error;
   }
+
+  const shiftTimeline = buildShiftTimeline({
+    shift: selectedShift,
+    baseDate: session.startTime,
+  });
 
   session.parts = finalParts;
   session.endTime = actualEndTime;
@@ -477,10 +508,27 @@ export const completeProductionSession = async ({
   session.runningMinutes = timing.runningMinutes;
 
   session.totalProductionQty = totalProductionQty;
-  session.averageProductionRate = averageProductionRate;
+    session.averageProductionRatePerHour = round(
+    averageProductionRate * 60,
+    2
+  );
   session.achievementPercent = achievementPercent;
 
-  session.timeBlockOverlap = timeBlockOverlap;
+  session.timeBlocks = shiftTimeline.timeline.map((block) => ({
+    blockNumber: block.blockNumber || 0,
+    blockLabel: block.blockName,
+    blockStartTime: block.startTime,
+    blockEndTime: block.endTime,
+    overlapStartTime: block.startTime,
+    overlapEndTime: block.endTime,
+    overlapMinutes: block.durationMinutes,
+    productionQty: 0,
+    productionRatePerHour: 0,
+    downtimeMinutes: 0,
+    runningMinutes: block.isBreak
+      ? 0
+      : block.durationMinutes,
+  }));
 
   session.status = "Completed";
 
@@ -596,9 +644,12 @@ export const getSessionPerformance = async (sessionId) => {
 
     totalProductionQty: totalQuantity,
 
-    averageProductionRate: calculateAverageRate(
-      totalQuantity,
-      runningMinutes,
+    averageProductionRatePerHour: round(
+      calculateAverageRate(
+        totalQuantity,
+        runningMinutes,
+      ) * 60,
+      2
     ),
 
     demandPerShift: num(session.demandPerShift),
@@ -631,53 +682,113 @@ export const getLiveAnalysisSnapshot = async ({
   });
 
   const now = new Date();
+  const shiftCache = new Map();
 
-  const data = sessions.map((session) => {
-    const timing = calculateSessionTiming({
-      startTime: session.startTime,
-      endTime: now,
-      downtimes: session.downtimes || [],
-    });
+  const data = await Promise.all(
+    sessions.map(async (session) => {
+      const sessionShiftId = String(
+        session.shiftId?._id || session.shiftId
+      );
 
-    const totalProductionQty = calculateTotalQuantity(
-      session.parts || [],
-    );
+      let shiftTimeline = shiftCache.get(sessionShiftId);
 
-    return {
-      sessionId: session._id,
+      if (!shiftTimeline) {
+        const shift = await Shift.findById(sessionShiftId).lean();
 
-      modelId: session.modelId?._id || session.modelId,
-      modelName: session.modelId?.modelName || session.modelName,
+        if (!shift) {
+          throw new Error(`Shift not found: ${sessionShiftId}`);
+        }
 
-      shiftId: session.shiftId?._id || session.shiftId,
-      shiftName: session.shiftId?.shiftName || session.shiftName,
+        shiftTimeline = buildShiftTimeline({
+          shift,
+          baseDate: session.startTime,
+        });
 
-      startTime: session.startTime,
+        shiftCache.set(sessionShiftId, shiftTimeline);
+      }
 
-      elapsedMinutes: timing.durationMinutes,
+      const currentBlock = getCurrentLiveBlock({
+        timeline: shiftTimeline.timeline,
+        currentTime: now,
+      });
 
-      downtimeMinutes: timing.downtimeMinutes,
+      const upcomingBlocks = getUpcomingBlocks({
+        timeline: shiftTimeline.timeline,
+        currentTime: now,
+      });
 
-      runningMinutes: timing.runningMinutes,
+      const shiftStatus = getShiftStatus({
+        shiftStartTime: shiftTimeline.shiftStartTime,
+        shiftEndTime: shiftTimeline.shiftEndTime,
+        timeline: shiftTimeline.timeline,
+        currentTime: now,
+      });
 
-      totalProductionQty,
+      const timing = calculateSessionTiming({
+        startTime: session.startTime,
+        endTime: now,
+        downtimes: session.downtimes || [],
+      });
 
-      averageProductionRate: calculateAverageRate(
+      const totalProductionQty = calculateTotalQuantity(
+        session.parts || [],
+      );
+
+      return {
+        sessionId: session._id,
+
+        modelId: session.modelId?._id || session.modelId,
+        modelName: session.modelId?.modelName || session.modelName,
+
+        shiftId: session.shiftId?._id || session.shiftId,
+        shiftName: session.shiftId?.shiftName || session.shiftName,
+
+        startTime: session.startTime,
+
+        shiftStartTime: shiftTimeline.shiftStartTime,
+        shiftEndTime: shiftTimeline.shiftEndTime,
+        crossesMidnight: shiftTimeline.crossesMidnight,
+
+        shiftStatus,
+
+        shiftElapsedMinutes: calculateShiftElapsed({
+          shiftStartTime: shiftTimeline.shiftStartTime,
+          shiftEndTime: shiftTimeline.shiftEndTime,
+          currentTime: now,
+        }),
+
+        shiftRemainingMinutes: calculateShiftRemaining({
+          shiftStartTime: shiftTimeline.shiftStartTime,
+          shiftEndTime: shiftTimeline.shiftEndTime,
+          currentTime: now,
+        }),
+
+        currentBlock,
+        upcomingBlocks,
+        timeline: shiftTimeline.timeline,
+
+        elapsedMinutes: timing.durationMinutes,
+        downtimeMinutes: timing.downtimeMinutes,
+        runningMinutes: timing.runningMinutes,
+
         totalProductionQty,
-        timing.runningMinutes,
-      ),
 
-      demandPerShift: num(session.demandPerShift),
+        averageProductionRate: calculateAverageRate(
+          totalProductionQty,
+          timing.runningMinutes,
+        ),
 
-      achievementPercent: calculateAchievement(
-        totalProductionQty,
-        session.demandPerShift,
-      ),
+        demandPerShift: num(session.demandPerShift),
 
-      status: session.status,
-    };
-  });
+        achievementPercent: calculateAchievement(
+          totalProductionQty,
+          session.demandPerShift,
+        ),
+
+        status: session.status,
+      };
+    })
+  );
 
   return data;
 };
-

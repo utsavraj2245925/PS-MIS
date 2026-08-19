@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 /* ============================================================
    PART PRODUCTION
+
    Multiple parts can be produced during ONE model session.
 ============================================================ */
 
@@ -29,33 +30,47 @@ const partProductionSchema = new mongoose.Schema(
 
 
 /* ============================================================
-   TIME BLOCK OVERLAP
-   Stores how much production belongs to each time block.
+   DYNAMIC TIME BLOCK SNAPSHOT
+
+   These blocks are generated dynamically from:
+
+   Shift Master
+        ↓
+   liveBlock.utils.js
+        ↓
+   Production Session
+
+   There is NO TimeBlockConfiguration dependency here.
 ============================================================ */
 
 const timeBlockOverlapSchema = new mongoose.Schema(
   {
-    blockId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "TimeBlockConfiguration",
-    },
-
     blockNumber: {
       type: Number,
       required: true,
+      min: 1,
     },
 
     blockLabel: {
       type: String,
       trim: true,
+      required: true,
+    },
+
+    blockType: {
+      type: String,
+      enum: ["Production", "Break"],
+      required: true,
     },
 
     blockStartTime: {
       type: Date,
+      required: true,
     },
 
     blockEndTime: {
       type: Date,
+      required: true,
     },
 
     overlapStartTime: {
@@ -69,26 +84,31 @@ const timeBlockOverlapSchema = new mongoose.Schema(
     overlapMinutes: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
     productionQty: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
     productionRatePerHour: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
     downtimeMinutes: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
     runningMinutes: {
       type: Number,
       default: 0,
+      min: 0,
     },
   },
   { _id: false }
@@ -187,7 +207,12 @@ const productionSessionSchema = new mongoose.Schema(
 
 
     /* ---------------------------------------------------------
-       SHIFT
+       SHIFT SNAPSHOT
+
+       Original Shift Master remains the source of truth.
+
+       These fields preserve the shift information that was
+       used when this production session started.
     --------------------------------------------------------- */
 
     shiftId: {
@@ -198,6 +223,21 @@ const productionSessionSchema = new mongoose.Schema(
     },
 
     shiftName: {
+      type: String,
+      trim: true,
+    },
+
+    shiftType: {
+      type: String,
+      trim: true,
+    },
+
+    shiftStartTime: {
+      type: String,
+      trim: true,
+    },
+
+    shiftEndTime: {
       type: String,
       trim: true,
     },
@@ -237,6 +277,7 @@ const productionSessionSchema = new mongoose.Schema(
     durationMinutes: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
 
@@ -257,6 +298,7 @@ const productionSessionSchema = new mongoose.Schema(
     totalProductionQty: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
 
@@ -267,11 +309,19 @@ const productionSessionSchema = new mongoose.Schema(
     demandPerShift: {
       type: Number,
       default: 0,
+      min: 0,
+    },
+
+    targetPerSession: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     targetPerHour: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
 
@@ -282,6 +332,7 @@ const productionSessionSchema = new mongoose.Schema(
     averageProductionRatePerHour: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
 
@@ -292,16 +343,19 @@ const productionSessionSchema = new mongoose.Schema(
     grossDurationMinutes: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
     downtimeMinutes: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
     runningMinutes: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
 
@@ -317,7 +371,9 @@ const productionSessionSchema = new mongoose.Schema(
 
 
     /* ---------------------------------------------------------
-       TIME BLOCKS
+       DYNAMIC TIME BLOCK SNAPSHOTS
+
+       These are generated from Shift Master dynamically.
     --------------------------------------------------------- */
 
     timeBlocks: {
@@ -333,11 +389,13 @@ const productionSessionSchema = new mongoose.Schema(
     paintedAreaM2: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
     hangersUsed: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
 
@@ -383,8 +441,13 @@ productionSessionSchema.index({
   status: 1,
   plantId: 1,
   shiftId: 1,
+  conveyorId: 1,
 });
 
+
+/* ============================================================
+   MODEL EXPORT
+============================================================ */
 
 export default mongoose.model(
   "ProductionSession",
