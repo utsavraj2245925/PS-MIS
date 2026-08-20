@@ -168,14 +168,16 @@ export const startProductionSession = async ({
     error.statusCode = 400;
     throw error;
   }
-  
-
-  const demandPerShift = num(strength?.demandPerShift);
 
   const shiftTimeline = buildShiftTimeline({
     shift: selectedShift,
     baseDate: actualStartTime,
   });
+  
+
+  const demandPerShift = num(strength?.demandPerShift);
+
+  
 
   const actualWorkingMinutes = shiftTimeline.actualWorkingMinutes;
 
@@ -215,8 +217,6 @@ export const startProductionSession = async ({
 
     totalProductionQty: 0,
     averageProductionRate: 0,
-
-    demandPerShift,
 
     demandPerShift,
     targetPerHour,
@@ -515,16 +515,26 @@ export const completeProductionSession = async ({
   session.achievementPercent = achievementPercent;
 
   session.timeBlocks = shiftTimeline.timeline.map((block) => ({
-    blockNumber: block.blockNumber || 0,
+    blockNumber: block.isBreak ? null : block.blockNumber,
+
     blockLabel: block.blockName,
+
+    blockType: block.isBreak
+      ? "Break"
+      : "Production",
+
     blockStartTime: block.startTime,
     blockEndTime: block.endTime,
+
     overlapStartTime: block.startTime,
     overlapEndTime: block.endTime,
+
     overlapMinutes: block.durationMinutes,
+
     productionQty: 0,
     productionRatePerHour: 0,
     downtimeMinutes: 0,
+
     runningMinutes: block.isBreak
       ? 0
       : block.durationMinutes,

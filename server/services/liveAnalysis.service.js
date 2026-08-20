@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 
 import ProductionSession from "../models/productionSession.model.js";
-import TimeBlockConfiguration from "../models/timeBlockConfiguration.model.js";
 import Shift from "../models/shift.model.js";
 import Plant from "../models/plants.model.js";
 import ConveyorStrength from "../models/ConveyorStrength.model.js";
@@ -13,6 +12,15 @@ import {
   calculateDowntimeAdjustedMinutes,
   calculateDurationMinutes,
 } from "../utils/productionTime.utils.js";
+
+import {
+  buildShiftTimeline,
+  getCurrentLiveBlock,
+  getUpcomingBlocks as getTimelineUpcomingBlocks,
+  getShiftStatus,
+  calculateShiftElapsed,
+  calculateShiftRemaining,
+} from "../utils/liveBlock.utils.js";
 
 /* ============================================================
    HELPERS
@@ -132,50 +140,6 @@ export const resolveLiveScope = async ({ locationId, plantId, shiftId, conveyorI
   };
 };
 
-/* ============================================================
-   GET ACTIVE TIME-BLOCK CONFIGURATION
-============================================================ */
-
-export const getLiveTimeBlockConfiguration = async ({
-  locationId,
-  plantId,
-  shiftId,
-  conveyorId,
-}) => {
-  const filter = {
-    locationId: toObjectId(locationId),
-    plantId: toObjectId(plantId),
-    shiftId: toObjectId(shiftId),
-    status: "Active",
-  };
-
-  if (conveyorId) {
-    filter.conveyorId = toObjectId(conveyorId);
-  }
-
-  console.log("======================================");
-  console.log("TIME BLOCK CONFIG FILTER");
-  console.log(filter);
-
-  const configuration = await TimeBlockConfiguration
-    .findOne(filter)
-    .sort({ updatedAt: -1 })
-    .lean();
-
-  console.log(
-    "TIME BLOCK CONFIG FOUND:",
-    configuration ? configuration._id : null
-  );
-
-  console.log(
-    "TIME BLOCK COUNT:",
-    configuration?.blocks?.length || 0
-  );
-
-  console.log("======================================");
-
-  return configuration;
-};
 
 /* ============================================================
    BUILD LIVE SHIFT RUNTIME FROM SHIFT MASTER
@@ -510,41 +474,19 @@ export const calculateBlockPerformance = ({
 ============================================================ */
 
 export const buildCurrentBlock = ({
-  configuration,
-  shiftRuntime,
-  sessions,
+  shift,
   now = new Date(),
 }) => {
-  if (!configuration?.blocks?.length) return null;
+  if (!shift) return null;
 
-  const shiftStart =
-    shiftRuntime?.actualStartTime ||
-    shiftRuntime?.shiftStartTime ||
-    shiftRuntime?.startTime;
+  const timeline = buildShiftTimeline({
+    shift,
+    baseDate: now,
+  });
 
-  if (!shiftStart) return null;
-
-  const currentBlock = getCurrentTimeBlock(
-    configuration.blocks,
-    shiftStart,
-    now
-  );
-
-  if (!currentBlock) return null;
-
-  const blockStart = new Date(currentBlock.startTime);
-  const blockEnd = new Date(currentBlock.endTime);
-
-  const block = {
-    ...currentBlock,
-    startTime: blockStart,
-    endTime: blockEnd,
-  };
-
-  return calculateBlockPerformance({
-    block,
-    sessions,
-    now,
+  return getCurrentLiveBlock({
+    timeline: timeline.timeline,
+    currentTime: now,
   });
 };
 
@@ -553,42 +495,67 @@ export const buildCurrentBlock = ({
 ============================================================ */
 
 export const buildBlockPerformance = ({
-  configuration,
-  shiftRuntime,
-  sessions,
+  shift,
+  sessions = [],
   now = new Date(),
 }) => {
-  if (!configuration?.blocks?.length || !shiftRuntime) return [];
+  if (!shift) return [];
 
-  const shiftStart =
-    shiftRuntime.actualStartTime ||
-    shiftRuntime.shiftStartTime ||
-    shiftRuntime.startTime;
+  const shiftTimeline = buildShiftTimeline({
+    shift,
+    baseDate: now,
+  });
 
-  if (!shiftStart) return [];
+  return shiftTimeline.timeline.map((block) => {
+    const productionSessions = sessions.filter((session) => {
+      const sessionStart = safeDate(getSessionStart(session));
+      const sessionEnd =
+        safeDate(getSessionEnd(session)) || now;
 
-  return configuration.blocks
-    .filter((block) => block.active !== false)
-    .map((block) => {
-      const startOffset = num(block.startOffsetMinutes);
-      const endOffset = num(block.endOffsetMinutes);
+      if (!sessionStart) return false;
 
-      const startTime = new Date(shiftStart);
-      startTime.setMinutes(startTime.getMinutes() + startOffset);
-
-      const endTime = new Date(shiftStart);
-      endTime.setMinutes(endTime.getMinutes() + endOffset);
-
-      return calculateBlockPerformance({
-        block: {
-          ...block,
-          startTime,
-          endTime,
-        },
-        sessions,
-        now,
-      });
+      return (
+        sessionStart < block.endTime &&
+        sessionEnd > block.startTime
+      );
     });
+
+    const productionQty = productionSessions.reduce(
+      (sum, session) =>
+        sum + getSessionQuantity(session),
+      0
+    );
+
+    return {
+      blockNumber: block.blockNumber ?? null,
+      blockLabel: block.blockName,
+      blockType: block.type,
+
+      startTime: block.startTime,
+      endTime: block.endTime,
+
+      durationMinutes: block.durationMinutes,
+
+      productionQty,
+
+      productionRatePerHour:
+        block.durationMinutes > 0
+          ? round(
+              (productionQty / block.durationMinutes) * 60,
+              2
+            )
+          : 0,
+
+      downtimeMinutes: 0,
+
+      runningMinutes: block.isBreak
+        ? 0
+        : block.durationMinutes,
+
+      isBreak: block.isBreak,
+      active: true,
+    };
+  });
 };
 
 /* ============================================================
@@ -596,12 +563,20 @@ export const buildBlockPerformance = ({
 ============================================================ */
 
 export const getUpcomingBlocks = ({
-  blockPerformance = [],
+  shift,
   now = new Date(),
 }) => {
-  return blockPerformance
-    .filter((block) => safeDate(block.startTime) > now)
-    .slice(0, 3);
+  if (!shift) return [];
+
+  const timeline = buildShiftTimeline({
+    shift,
+    baseDate: now,
+  });
+
+  return getTimelineUpcomingBlocks({
+    timeline: timeline.timeline,
+    currentTime: now,
+  });
 };
 
 /* ============================================================
@@ -657,14 +632,26 @@ export const getLiveAnalysis = async ({
     conveyorId,
   });
 
-  const [configuration, shiftRuntime, sessions] = await Promise.all([
-    getLiveTimeBlockConfiguration(scope),
-    getLiveShiftRuntime(scope),
-    getLiveSessions({
-      ...scope,
-      date,
-    }),
-  ]);
+  const [shift, shiftRuntime, sessions] =
+    await Promise.all([
+      Shift.findById(scope.shiftId).lean(),
+
+      getLiveShiftRuntime(scope),
+
+      getLiveSessions({
+        ...scope,
+        date,
+      }),
+    ]);
+    
+  if (!shift) {
+    const error = new Error(
+      `Shift not found: ${scope.shiftId}`
+    );
+
+    error.statusCode = 404;
+    throw error;
+  }
 
   const currentSession = getCurrentProductionSession(sessions);
 
@@ -674,21 +661,18 @@ export const getLiveAnalysis = async ({
   );
 
   const currentBlock = buildCurrentBlock({
-    configuration,
-    shiftRuntime,
-    sessions,
+    shift,
     now,
   });
 
   const blockPerformance = buildBlockPerformance({
-    configuration,
-    shiftRuntime,
+    shift,
     sessions,
     now,
   });
 
   const upcomingBlocks = getUpcomingBlocks({
-    blockPerformance,
+    shift,
     now,
   });
 
@@ -877,8 +861,8 @@ export const getCurrentBlockAnalysis = async ({
     conveyorId,
   });
 
-  const [configuration, shiftRuntime, sessions] = await Promise.all([
-    getLiveTimeBlockConfiguration(scope),
+  const [shift, shiftRuntime, sessions] = await Promise.all([
+    Shift.findById(scope.shiftId).lean(),
     getLiveShiftRuntime(scope),
     getLiveSessions({
       ...scope,
@@ -886,10 +870,18 @@ export const getCurrentBlockAnalysis = async ({
     }),
   ]);
 
+  if (!shift) {
+    const error = new Error(
+      `Shift not found: ${scope.shiftId}`
+    );
+
+    error.statusCode = 404;
+    throw error;
+  }
+
+
   return buildCurrentBlock({
-    configuration,
-    shiftRuntime,
-    sessions,
+    shift,
     now: new Date(),
   });
 };

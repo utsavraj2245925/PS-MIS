@@ -47,8 +47,8 @@ const timeBlockOverlapSchema = new mongoose.Schema(
   {
     blockNumber: {
       type: Number,
-      required: true,
       min: 1,
+      default: null,
     },
 
     blockLabel: {
