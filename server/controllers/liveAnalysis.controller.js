@@ -8,18 +8,49 @@ export const getLiveAnalysis = async (req, res) => {
   console.log("LIVE ANALYSIS QUERY:", req.query);
 
   try {
-    const { locationId, plantId, shiftId, conveyorId, date } = req.query;
+    const { date } = req.query;
 
-    console.log("PLANT ID:", plantId);
-    console.log("SHIFT ID:", shiftId);
+    const user = req.user;
 
-    const data = await liveAnalysisService.getLiveAnalysis({ locationId, plantId, shiftId, conveyorId, date, now: new Date() });
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authenticated user not found",
+      });
+    }
 
-    return res.status(200).json({ success: true, message: "Live analysis fetched successfully", data });
+    console.log("LIVE ANALYSIS AUTH USER:", {
+      userId: user._id,
+      locationId: user.locationId?._id || user.locationId,
+      plantId: user.plantId?._id || user.plantId,
+      shiftId: user.shiftId?._id || user.shiftId,
+      conveyorId: user.conveyorId,
+      conveyorName: user.conveyorName,
+    });
+
+    const data = await liveAnalysisService.getLiveAnalysis({
+      locationId: user.locationId?._id || user.locationId,
+      plantId: user.plantId?._id || user.plantId,
+      shiftId: user.shiftId?._id || user.shiftId,
+      conveyorId: user.conveyorId,
+      date,
+      now: new Date(),
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Live analysis fetched successfully",
+      data,
+    });
+
   } catch (error) {
     console.error("GET LIVE ANALYSIS ERROR:", error);
 
-    return res.status(error.statusCode || 500).json({ success: false, message: error.message || "Failed to fetch live analysis" });
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message:
+        error.message || "Failed to fetch live analysis",
+    });
   }
 };
 

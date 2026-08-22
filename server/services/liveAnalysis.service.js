@@ -6,7 +6,6 @@ import Plant from "../models/plants.model.js";
 import ConveyorStrength from "../models/ConveyorStrength.model.js";
 
 import {
-  getCurrentTimeBlock,
   calculateProductionRate,
   calculateAchievement,
   calculateDowntimeAdjustedMinutes,
@@ -44,11 +43,6 @@ const safeDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const minutesSince = (startTime, now = new Date()) => {
-  const start = safeDate(startTime);
-  if (!start) return 0;
-  return Math.max(Math.round((now - start) / 60000), 0);
-};
 
 const formatDuration = (minutes = 0) => {
   const total = Math.max(Math.round(num(minutes)), 0);
@@ -128,14 +122,32 @@ export const resolveLiveScope = async ({ locationId, plantId, shiftId, conveyorI
   }
 
   return {
-    locationId: locationObjectId || plant.locationId || null,
-    locationName: plant.locationName || "",
+    locationId:
+      locationObjectId ||
+      plant.locationId ||
+      selectedShift.locationId ||
+      null,
+
+    locationName:
+      plant.locationName ||
+      selectedShift.locationName ||
+      "",
+
     plantId: plant._id,
-    plantName: plant.plantName || "",
+
+    plantName:
+      plant.plantName || "",
+
     shiftId: selectedShift._id,
-    shiftName: selectedShift.shiftName || "",
-    conveyorId: conveyorObjectId || null,
+
+    shiftName:
+      selectedShift.shiftName || "",
+
+    conveyorId:
+      conveyorObjectId || null,
+
     conveyorName: "",
+
     shift: selectedShift,
   };
 };
@@ -632,11 +644,8 @@ export const getLiveAnalysis = async ({
     conveyorId,
   });
 
-  const [shift, shiftRuntime, sessions] =
-    await Promise.all([
+  const [shift, sessions] = await Promise.all([
       Shift.findById(scope.shiftId).lean(),
-
-      getLiveShiftRuntime(scope),
 
       getLiveSessions({
         ...scope,
@@ -660,26 +669,47 @@ export const getLiveAnalysis = async ({
     now
   );
 
-  const currentBlock = buildCurrentBlock({
-    shift,
-    now,
-  });
+    /* ============================================================
+      BUILD SHIFT TIMELINE ONCE
+    ============================================================ */
 
-  const blockPerformance = buildBlockPerformance({
-    shift,
-    sessions,
-    now,
-  });
+    const shiftTimeline = buildShiftTimeline({
+      shift,
+      baseDate: now,
+    });
 
-  const upcomingBlocks = getUpcomingBlocks({
-    shift,
-    now,
-  });
+    /* ============================================================
+      CURRENT / UPCOMING BLOCKS
+    ============================================================ */
 
-  const timeline = buildSessionTimeline({
-    sessions,
-    now,
-  });
+    const currentBlock = getCurrentLiveBlock({
+      timeline: shiftTimeline.timeline,
+      currentTime: now,
+    });
+
+    const upcomingBlocks = getTimelineUpcomingBlocks({
+      timeline: shiftTimeline.timeline,
+      currentTime: now,
+    });
+
+    /* ============================================================
+      BLOCK PERFORMANCE
+    ============================================================ */
+
+    const blockPerformance = buildBlockPerformance({
+      shift,
+      sessions,
+      now,
+    });
+
+    /* ============================================================
+      SESSION TIMELINE
+    ============================================================ */
+
+    const timeline = buildSessionTimeline({
+      sessions,
+      now,
+    });
 
   const completedSessions = sessions.filter(
     (session) => safeDate(getSessionEnd(session))
@@ -714,6 +744,13 @@ export const getLiveAnalysis = async ({
     0
   );
 
+  const shiftStatus = getShiftStatus({
+    shiftStartTime: shiftTimeline.shiftStartTime,
+    shiftEndTime: shiftTimeline.shiftEndTime,
+    timeline: shiftTimeline.timeline,
+    currentTime: now,
+  });
+
   return {
     scope: {
       locationId: scope.locationId,
@@ -728,18 +765,21 @@ export const getLiveAnalysis = async ({
     serverTime: now,
 
     shift: {
-      runtimeId: shiftRuntime?._id || null,
-      shiftStartTime:
-        shiftRuntime?.actualStartTime ||
-        shiftRuntime?.shiftStartTime ||
-        shiftRuntime?.startTime ||
-        null,
-      shiftEndTime:
-        shiftRuntime?.actualEndTime ||
-        shiftRuntime?.shiftEndTime ||
-        shiftRuntime?.endTime ||
-        null,
-      status: shiftRuntime?.status || "Not Started",
+      runtimeId: null,
+
+      shiftStartTime: shiftTimeline.shiftStartTime,
+
+      shiftEndTime: shiftTimeline.shiftEndTime,
+
+      status: shiftStatus,
+
+      crossesMidnight: shiftTimeline.crossesMidnight,
+
+      totalShiftMinutes: shiftTimeline.totalShiftMinutes,
+
+      totalBreakMinutes: shiftTimeline.totalBreakMinutes,
+
+      actualWorkingMinutes: shiftTimeline.actualWorkingMinutes,
     },
 
     currentBlock,
@@ -852,7 +892,6 @@ export const getCurrentBlockAnalysis = async ({
   plantId,
   shiftId,
   conveyorId,
-  date,
 }) => {
   const scope = await resolveLiveScope({
     locationId,
@@ -861,14 +900,7 @@ export const getCurrentBlockAnalysis = async ({
     conveyorId,
   });
 
-  const [shift, shiftRuntime, sessions] = await Promise.all([
-    Shift.findById(scope.shiftId).lean(),
-    getLiveShiftRuntime(scope),
-    getLiveSessions({
-      ...scope,
-      date,
-    }),
-  ]);
+  const shift = await Shift.findById(scope.shiftId).lean();
 
   if (!shift) {
     const error = new Error(
@@ -878,7 +910,6 @@ export const getCurrentBlockAnalysis = async ({
     error.statusCode = 404;
     throw error;
   }
-
 
   return buildCurrentBlock({
     shift,

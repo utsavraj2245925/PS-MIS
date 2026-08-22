@@ -17,6 +17,7 @@ import ProductionEntryPage from "./pages/ProductionEntryPage";
 import UserProductionPage from "./pages/UserProductionPage";
 import ProductionRecordsPage from "./pages/ProductionRecordPage";
 import ReportsPage from "./pages/ReportsPage";
+import LiveAnalysisPage from "./pages/LiveAnalysisPage";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
 
@@ -158,7 +159,27 @@ function App() {
           }
         />
 
-                <Route
+        <Route
+          path="/live-analysis"
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                "SUPER_ADMIN",
+                "superAdmin",
+                "PLANT_ADMIN",
+                "plantAdmin",
+                "MANAGER",
+                "manager",
+              ]}
+            >
+              <DashboardLayout>
+                <LiveAnalysisPage />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/reports"
           element={
             <ProtectedRoute allowedRoles={[

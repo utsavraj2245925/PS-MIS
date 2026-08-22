@@ -12,6 +12,8 @@ import {
 
 const router = express.Router();
 
+console.log(">>> PLANTS ROUTE LOADED <<<");
+
 /* ==========================================================
    CREATE PLANT
 ========================================================== */

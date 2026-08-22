@@ -121,16 +121,24 @@ export default function Sidebar({ collapsed, setCollapsed }) {
 
         <ul className="space-y-1">
           <li>
-            <button
-              className={`w-full flex items-center rounded-lg text-slate-300 hover:bg-slate-800 transition-all ${
-                collapsed ? "justify-center h-[34px]" : "gap-[10px] px-[10px] h-[34px]"
+            <Link
+              to="/live-analysis"
+              className={`w-full flex items-center rounded-lg transition-all ${
+                collapsed
+                  ? "justify-center h-[34px]"
+                  : "gap-[10px] px-[10px] h-[34px]"
+              } ${
+                location.pathname === "/live-analysis"
+                  ? "bg-cyan-700 text-white"
+                  : "text-slate-300 hover:bg-slate-800"
               }`}
             >
-              <CheckCircle size={15} />
-              {!collapsed && <span className="text-[10px]">Live Analysis</span>}
-            </button>
+              <Activity size={15} />
+              {!collapsed && (
+                <span className="text-[10px]">Live Analysis</span>
+              )}
+            </Link>
           </li>
-
                     {canViewReports && (
             <li>
               <Link

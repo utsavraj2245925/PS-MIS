@@ -7,31 +7,44 @@ import {
   getCurrentBlockAnalysis,
 } from "../controllers/liveAnalysis.controller.js";
 
+import { isAuthenticated } from "../Auth/isAuthenticated.js";
+
 const router = express.Router();
 
 /* =========================================================
    LIVE ANALYSIS
 ========================================================= */
 
-router.get("/", getLiveAnalysis);
+router.get("/", isAuthenticated, getLiveAnalysis);
 
 /* =========================================================
    LIVE ANALYSIS WITH FILTERS
-   ?locationId=&plantId=&shiftId=&conveyorId=&date=
 ========================================================= */
 
-router.get("/request", getLiveAnalysisForRequest);
+router.get(
+  "/request",
+  isAuthenticated,
+  getLiveAnalysisForRequest
+);
 
 /* =========================================================
    CURRENT MODEL
 ========================================================= */
 
-router.get("/current-model", getCurrentModelAnalysis);
+router.get(
+  "/current-model",
+  isAuthenticated,
+  getCurrentModelAnalysis
+);
 
 /* =========================================================
    CURRENT TIME BLOCK
 ========================================================= */
 
-router.get("/current-block", getCurrentBlockAnalysis);
+router.get(
+  "/current-block",
+  isAuthenticated,
+  getCurrentBlockAnalysis
+);
 
 export default router;
