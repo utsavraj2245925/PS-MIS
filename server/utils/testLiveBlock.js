@@ -2,24 +2,12 @@ console.log(">>> TEST LIVE BLOCK FILE STARTED <<<");
 
 import mongoose from "mongoose";
 import Shift from "../models/shift.model.js";
-import { buildShiftTimeline } from "./liveBlock.utils.js";
 import {
   buildShiftTimeline,
   getCurrentLiveBlock,
   getUpcomingBlocks,
   getShiftStatus,
 } from "./liveBlock.utils.js";
-
-console.log("\nSHIFT STATUS TEST:");
-
-console.log(
-  getShiftStatus({
-    shiftStartTime: timeline.shiftStartTime,
-    shiftEndTime: timeline.shiftEndTime,
-    timeline: timeline.timeline,
-    currentTime: new Date(),
-  })
-);
 
 const run = async () => {
   try {
@@ -50,6 +38,16 @@ const run = async () => {
       shift,
       baseDate: new Date(),
     });
+    console.log("\nSHIFT STATUS TEST:");
+
+    console.log(
+      getShiftStatus({
+        shiftStartTime: timeline.shiftStartTime,
+        shiftEndTime: timeline.shiftEndTime,
+        timeline: timeline.timeline,
+        currentTime: new Date(),
+      })
+    );
 
     console.log("\nSHIFT TIMING:");
     console.log({
@@ -75,15 +73,14 @@ const run = async () => {
       }))
     );
     
-   console.log("\nCURRENT BLOCK TEST:");
+console.log("\nCURRENT BLOCK TEST:");
 
 const currentTime = new Date();
 
-const currentBlock = timeline.timeline.find(
-  (block) =>
-    currentTime >= block.startTime &&
-    currentTime < block.endTime
-);
+const currentBlock = getCurrentLiveBlock({
+  timeline: timeline.timeline,
+  currentTime,
+});
 
 console.log({
   currentTime,
@@ -98,6 +95,25 @@ console.log({
       }
     : null,
 });
+
+console.log("\nUPCOMING BLOCKS TEST:");
+
+const upcomingBlocks = getUpcomingBlocks({
+  timeline: timeline.timeline,
+  currentTime,
+});
+
+console.table(
+  upcomingBlocks.map((block) => ({
+    number: block.blockNumber,
+    name: block.blockName,
+    type: block.type,
+    start: block.startTime,
+    end: block.endTime,
+    duration: block.durationMinutes,
+    break: block.isBreak,
+  }))
+);
 
     console.log("\nBREAK TEST:");
 

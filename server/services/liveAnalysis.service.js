@@ -43,6 +43,14 @@ const safeDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const scopeError = (message, statusCode) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+const getUserScopeId = (value) => value?._id || value || null;
+
 
 const formatDuration = (minutes = 0) => {
   const total = Math.max(Math.round(num(minutes)), 0);
@@ -96,29 +104,51 @@ export const resolveLiveScope = async ({ locationId, plantId, shiftId, conveyorI
   const shiftObjectId = toObjectId(shiftId);
   const conveyorObjectId = toObjectId(conveyorId);
 
-  if (!plantObjectId) throw new Error("Plant is required");
-  if (!shiftObjectId) throw new Error("Shift is required");
+  if (!locationObjectId) throw scopeError("Location is required", 400);
+  if (!plantObjectId) throw scopeError("Plant is required", 400);
+  if (!shiftObjectId) throw scopeError("Shift is required", 400);
 
   const plant = await Plant.findById(plantObjectId).lean();
 
   if (!plant) {
-    const error = new Error("Plant not found");
-    error.statusCode = 404;
-    throw error;
+    throw scopeError("Plant not found", 404);
+  }
+
+  if (plant.status !== "Active" || plant.isActive === false) {
+    throw scopeError("Selected plant is inactive", 400);
   }
 
   const selectedShift = await Shift.findById(shiftObjectId).lean();
 
   if (!selectedShift) {
-    const error = new Error("Shift not found");
-    error.statusCode = 404;
-    throw error;
+    throw scopeError("Shift not found", 404);
+  }
+
+  if (selectedShift.status !== "Active") {
+    throw scopeError("Selected shift is inactive", 400);
   }
 
   if (locationObjectId && plant.locationId && String(plant.locationId) !== String(locationObjectId)) {
-    const error = new Error("Selected plant does not belong to selected location");
-    error.statusCode = 400;
-    throw error;
+    throw scopeError("Selected plant does not belong to selected location", 400);
+  }
+
+  if (String(selectedShift.plantId) !== String(plant._id)) {
+    throw scopeError("Selected shift does not belong to selected plant", 400);
+  }
+
+  let selectedConveyor = null;
+  if (conveyorObjectId) {
+    selectedConveyor = (plant.conveyors || []).find(
+      (conveyor) => String(conveyor._id) === String(conveyorObjectId)
+    );
+
+    if (!selectedConveyor) {
+      throw scopeError("Selected conveyor does not belong to selected plant", 400);
+    }
+
+    if (selectedConveyor.status !== "Active") {
+      throw scopeError("Selected conveyor is inactive", 400);
+    }
   }
 
   return {
@@ -146,10 +176,96 @@ export const resolveLiveScope = async ({ locationId, plantId, shiftId, conveyorI
     conveyorId:
       conveyorObjectId || null,
 
-    conveyorName: "",
+    conveyorName: selectedConveyor?.conveyorName || "",
 
     shift: selectedShift,
   };
+};
+
+/* ============================================================
+   RESOLVE ROLE-AWARE LIVE ANALYSIS SCOPE
+============================================================ */
+
+export const resolveRoleAwareLiveScope = async (user, query = {}) => {
+  if (!user) {
+    throw scopeError("Authenticated user not found", 401);
+  }
+
+  const userLocationId = getUserScopeId(user.locationId);
+  const userPlantId = getUserScopeId(user.plantId);
+  const requestedLocationId = query.locationId || null;
+  const requestedPlantId = query.plantId || null;
+  const requestedShiftId = query.shiftId || null;
+  const requestedConveyorId = query.conveyorId || null;
+
+  let locationId;
+  let plantId;
+
+  if (user.role === "user") {
+    throw scopeError("Users are not authorized to access Live Analysis", 403);
+  }
+
+  if (user.role === "superAdmin") {
+    locationId = requestedLocationId;
+    plantId = requestedPlantId;
+  } else if (user.role === "plantAdmin") {
+    if (!userLocationId) {
+      throw scopeError("Plant Admin does not have an assigned location", 400);
+    }
+
+    if (requestedLocationId && String(requestedLocationId) !== String(userLocationId)) {
+      throw scopeError("Plant Admin cannot access another location", 403);
+    }
+
+    if (!requestedPlantId) {
+      throw scopeError("Plant is required", 400);
+    }
+
+    if (!toObjectId(requestedPlantId)) {
+      throw scopeError("Invalid plant selection", 400);
+    }
+
+    const requestedPlant = await Plant.findById(requestedPlantId).select("locationId").lean();
+    if (!requestedPlant) {
+      throw scopeError("Plant not found", 404);
+    }
+
+    if (String(requestedPlant.locationId) !== String(userLocationId)) {
+      throw scopeError("Plant Admin cannot access a plant outside the assigned location", 403);
+    }
+
+    locationId = userLocationId;
+    plantId = requestedPlantId;
+  } else if (user.role === "manager") {
+    if (!userPlantId) {
+      throw scopeError("Manager does not have an assigned plant", 400);
+    }
+
+    const assignedPlant = await Plant.findById(userPlantId).select("locationId").lean();
+    if (!assignedPlant) {
+      throw scopeError("Assigned plant not found", 404);
+    }
+
+    if (requestedPlantId && String(requestedPlantId) !== String(userPlantId)) {
+      throw scopeError("Manager cannot access another plant", 403);
+    }
+
+    if (requestedLocationId && String(requestedLocationId) !== String(assignedPlant.locationId)) {
+      throw scopeError("Manager cannot access another location", 403);
+    }
+
+    locationId = assignedPlant.locationId;
+    plantId = userPlantId;
+  } else {
+    throw scopeError("Role is not authorized to access Live Analysis", 403);
+  }
+
+  return resolveLiveScope({
+    locationId,
+    plantId,
+    shiftId: requestedShiftId,
+    conveyorId: requestedConveyorId,
+  });
 };
 
 
@@ -250,8 +366,9 @@ export const getLiveShiftRuntime = async ({
    GET LIVE PRODUCTION SESSIONS
 ============================================================ */
 
-export const getLiveSessions = async ({ plantId, shiftId, conveyorId, date }) => {
+export const getLiveSessions = async ({ locationId, plantId, shiftId, conveyorId, date }) => {
   const filter = {
+    locationId: toObjectId(locationId),
     plantId: toObjectId(plantId),
     shiftId: toObjectId(shiftId),
   };
@@ -507,16 +624,11 @@ export const buildCurrentBlock = ({
 ============================================================ */
 
 export const buildBlockPerformance = ({
-  shift,
+  shiftTimeline,
   sessions = [],
   now = new Date(),
 }) => {
-  if (!shift) return [];
-
-  const shiftTimeline = buildShiftTimeline({
-    shift,
-    baseDate: now,
-  });
+  if (!shiftTimeline?.timeline) return [];
 
   return shiftTimeline.timeline.map((block) => {
     const productionSessions = sessions.filter((session) => {
@@ -697,7 +809,7 @@ export const getLiveAnalysis = async ({
     ============================================================ */
 
     const blockPerformance = buildBlockPerformance({
-      shift,
+      shiftTimeline,
       sessions,
       now,
     });
@@ -834,22 +946,11 @@ export const getLiveAnalysis = async ({
    GET LIVE ANALYSIS FOR REQUEST
 ============================================================ */
 
-export const getLiveAnalysisForRequest = async (req) => {
-  const {
-    locationId,
-    plantId,
-    shiftId,
-    conveyorId,
-    date,
-  } = req.query;
-
+export const getLiveAnalysisForRequest = async ({ scope, date, now = new Date() }) => {
   return getLiveAnalysis({
-    locationId,
-    plantId,
-    shiftId,
-    conveyorId,
+    ...scope,
     date,
-    now: new Date(),
+    now,
   });
 };
 
@@ -858,12 +959,14 @@ export const getLiveAnalysisForRequest = async (req) => {
 ============================================================ */
 
 export const getCurrentModelAnalysis = async ({
+  locationId,
   plantId,
   shiftId,
   conveyorId,
   date,
 }) => {
   const sessions = await getLiveSessions({
+    locationId,
     plantId,
     shiftId,
     conveyorId,
@@ -893,20 +996,10 @@ export const getCurrentBlockAnalysis = async ({
   shiftId,
   conveyorId,
 }) => {
-  const scope = await resolveLiveScope({
-    locationId,
-    plantId,
-    shiftId,
-    conveyorId,
-  });
-
-  const shift = await Shift.findById(scope.shiftId).lean();
+  const shift = await Shift.findById(shiftId).lean();
 
   if (!shift) {
-    const error = new Error(
-      `Shift not found: ${scope.shiftId}`
-    );
-
+    const error = new Error(`Shift not found: ${shiftId}`);
     error.statusCode = 404;
     throw error;
   }

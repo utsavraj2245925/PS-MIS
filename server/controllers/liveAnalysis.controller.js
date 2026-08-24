@@ -9,30 +9,10 @@ export const getLiveAnalysis = async (req, res) => {
 
   try {
     const { date } = req.query;
-
-    const user = req.user;
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Authenticated user not found",
-      });
-    }
-
-    console.log("LIVE ANALYSIS AUTH USER:", {
-      userId: user._id,
-      locationId: user.locationId?._id || user.locationId,
-      plantId: user.plantId?._id || user.plantId,
-      shiftId: user.shiftId?._id || user.shiftId,
-      conveyorId: user.conveyorId,
-      conveyorName: user.conveyorName,
-    });
+    const scope = await liveAnalysisService.resolveRoleAwareLiveScope(req.user, req.query);
 
     const data = await liveAnalysisService.getLiveAnalysis({
-      locationId: user.locationId?._id || user.locationId,
-      plantId: user.plantId?._id || user.plantId,
-      shiftId: user.shiftId?._id || user.shiftId,
-      conveyorId: user.conveyorId,
+      ...scope,
       date,
       now: new Date(),
     });
@@ -60,7 +40,12 @@ export const getLiveAnalysis = async (req, res) => {
 
 export const getLiveAnalysisForRequest = async (req, res) => {
   try {
-    const data = await liveAnalysisService.getLiveAnalysisForRequest(req);
+    const scope = await liveAnalysisService.resolveRoleAwareLiveScope(req.user, req.query);
+    const data = await liveAnalysisService.getLiveAnalysisForRequest({
+      scope,
+      date: req.query.date,
+      now: new Date(),
+    });
 
     return res.status(200).json({ success: true, message: "Live analysis fetched successfully", data });
   } catch (error) {
@@ -76,9 +61,10 @@ export const getLiveAnalysisForRequest = async (req, res) => {
 
 export const getCurrentModelAnalysis = async (req, res) => {
   try {
-    const { plantId, shiftId, conveyorId, date } = req.query;
+    const scope = await liveAnalysisService.resolveRoleAwareLiveScope(req.user, req.query);
+    const { date } = req.query;
 
-    const data = await liveAnalysisService.getCurrentModelAnalysis({ plantId, shiftId, conveyorId, date });
+    const data = await liveAnalysisService.getCurrentModelAnalysis({ ...scope, date });
 
     return res.status(200).json({ success: true, message: "Current model analysis fetched successfully", data });
   } catch (error) {
@@ -94,9 +80,9 @@ export const getCurrentModelAnalysis = async (req, res) => {
 
 export const getCurrentBlockAnalysis = async (req, res) => {
   try {
-    const { locationId, plantId, shiftId, conveyorId, date } = req.query;
+    const scope = await liveAnalysisService.resolveRoleAwareLiveScope(req.user, req.query);
 
-    const data = await liveAnalysisService.getCurrentBlockAnalysis({ locationId, plantId, shiftId, conveyorId, date });
+    const data = await liveAnalysisService.getCurrentBlockAnalysis(scope);
 
     return res.status(200).json({ success: true, message: "Current block analysis fetched successfully", data });
   } catch (error) {
