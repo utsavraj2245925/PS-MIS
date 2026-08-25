@@ -22,7 +22,10 @@ export const startProductionSession = async (req, res) => {
 export const updateSessionParts = async (req, res) => {
   try {
     const sessionId = req.params.id;
-    const session = await productionSessionService.updateSessionParts(sessionId, req.body);
+    const session = await productionSessionService.updateProductionSessionParts({
+      sessionId,
+      parts: req.body.parts,
+    });
 
     return res.status(200).json({ success: true, message: "Session part quantities updated successfully", data: session });
   } catch (error) {
@@ -38,7 +41,10 @@ export const updateSessionParts = async (req, res) => {
 export const updateSessionDowntime = async (req, res) => {
   try {
     const sessionId = req.params.id;
-    const session = await productionSessionService.updateSessionDowntime(sessionId, req.body);
+    const session = await productionSessionService.updateProductionSessionDowntime({
+      sessionId,
+      downtimes: req.body.downtimes,
+    });
 
     return res.status(200).json({ success: true, message: "Session downtime updated successfully", data: session });
   } catch (error) {
@@ -88,7 +94,11 @@ export const getProductionSessionById = async (req, res) => {
 export const completeProductionSession = async (req, res) => {
   try {
     const sessionId = req.params.id;
-    const session = await productionSessionService.completeProductionSession(sessionId, { ...req.body, userId: req.user?.id || req.user?._id });
+    const session = await productionSessionService.completeProductionSession({
+      sessionId,
+      parts: req.body.parts,
+      endTime: req.body.endTime,
+    });
 
     return res.status(200).json({ success: true, message: "Production session completed successfully", data: session });
   } catch (error) {
@@ -104,7 +114,10 @@ export const completeProductionSession = async (req, res) => {
 export const cancelProductionSession = async (req, res) => {
   try {
     const sessionId = req.params.id;
-    const session = await productionSessionService.cancelProductionSession(sessionId, { ...req.body, userId: req.user?.id || req.user?._id });
+    const session = await productionSessionService.cancelProductionSession({
+      sessionId,
+      reason: req.body.reason,
+    });
 
     return res.status(200).json({ success: true, message: "Production session cancelled successfully", data: session });
   } catch (error) {

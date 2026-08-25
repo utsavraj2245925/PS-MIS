@@ -118,6 +118,37 @@ const timeBlockOverlapSchema = new mongoose.Schema(
 /* ============================================================
    MAIN PRODUCTION SESSION
 ============================================================ */
+const downtimeSchema = new mongoose.Schema(
+  {
+    downtimeTypeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "downtimeTypes",
+    },
+    type: {
+      type: String,
+      enum: ["Planned", "Unplanned"],
+      required: true,
+    },
+    startTime: {
+      type: Date,
+    },
+    endTime: {
+      type: Date,
+    },
+    duration: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    remark: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+      default: "",
+    },
+  },
+  { _id: false }
+);
 
 const productionSessionSchema = new mongoose.Schema(
   {
@@ -339,6 +370,11 @@ const productionSessionSchema = new mongoose.Schema(
     /* ---------------------------------------------------------
        DOWNTIME
     --------------------------------------------------------- */
+
+    downtimes: {
+      type: [downtimeSchema],
+      default: [],
+    },
 
     grossDurationMinutes: {
       type: Number,

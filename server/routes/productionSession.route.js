@@ -1,7 +1,9 @@
 import express from "express";
+import { isAuthenticated } from "../Auth/isAuthenticated.js";
 import { startProductionSession, updateSessionParts, updateSessionDowntime, getLiveProductionSession, getProductionSessionById, completeProductionSession, cancelProductionSession, getProductionSessionHistory, getProductionSessionPerformance, getProductionSessionSnapshot } from "../controllers/productionSession.controller.js";
 
 const router = express.Router();
+router.use(isAuthenticated);
 
 /* =========================================================
    START PRODUCTION SESSION
@@ -72,5 +74,6 @@ router.put("/:id/complete", completeProductionSession);
 ========================================================= */
 
 router.put("/:id/cancel", cancelProductionSession);
+
 
 export default router;
