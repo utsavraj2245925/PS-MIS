@@ -169,7 +169,11 @@ export default function UserProductionPage() {
   const [currentModelParts, setCurrentModelParts] = useState([]);
   const [currentPartQtys, setCurrentPartQtys]     = useState({});
   const [productionLog, setProductionLog]         = useState([]);
-  const [freeJob, setFreeJob] = useState({ startTime: null, running: false });
+  const [freeJob, setFreeJob] = useState({
+    startTime: null,
+    running: false,
+    sessionId: null,
+  });
 
   /* ── conveyor line switcher ── */
   const [activeLineIdx, setActiveLineIdx] = useState(0);
@@ -456,31 +460,181 @@ export default function UserProductionPage() {
   const [draftLoaded, setDraftLoaded] = useState(false);
 
   useEffect(() => {
-    if (!user?.email || draftLoaded) return;
+  if (!user?.email || draftLoaded) return;
+
+  const hydrateDraft = async () => {
     const draft = loadDraft(user.email);
+
     if (draft) {
       if (draft.productionLog?.length) setProductionLog(draft.productionLog);
       if (draft.defectLog?.length) setDefectLog(draft.defectLog);
       if (draft.consumableLog?.length) setConsumableLog(draft.consumableLog);
       if (draft.downtimes?.length) setDowntimes(draft.downtimes);
       if (draft.activeDowntime) setActiveDowntime(draft.activeDowntime);
-      if (draft.lineJobs) setLineJobs(draft.lineJobs);
-      if (draft.freeJob) setFreeJob(draft.freeJob);
+
       if (draft.currentPartQtys) setCurrentPartQtys(draft.currentPartQtys);
-      if (typeof draft.activeLineIdx === "number") setActiveLineIdx(draft.activeLineIdx);
-      if (typeof draft.lineQty === "number") setLineQty(draft.lineQty);
-      if (typeof draft.requiredManpower === "number") setRequiredManpower(draft.requiredManpower);
-      if (typeof draft.availableManpower === "number") setAvailableManpower(draft.availableManpower);
+      if (typeof draft.activeLineIdx === "number") {
+        setActiveLineIdx(draft.activeLineIdx);
+      }
+      if (typeof draft.lineQty === "number") {
+        setLineQty(draft.lineQty);
+      }
+      if (typeof draft.requiredManpower === "number") {
+        setRequiredManpower(draft.requiredManpower);
+      }
+      if (typeof draft.availableManpower === "number") {
+        setAvailableManpower(draft.availableManpower);
+      }
+
       if (draft.selectedModelId) {
         setSelectedModelId(draft.selectedModelId);
         fetchPartsForModel(draft.selectedModelId).then(setCurrentModelParts);
       }
-      const hasSomething = draft.productionLog?.length || draft.defectLog?.length || draft.downtimes?.length || draft.activeDowntime;
-      if (hasSomething) message.info("Restored your unsaved shift entry from this browser");
+
+      /*
+       * ---------------------------------------------------------
+       * RECONCILE SAVED PRODUCTION SESSIONS
+       * ---------------------------------------------------------
+       *
+       * The browser draft may contain an old sessionId.
+       * The server is the source of truth for whether that
+       * session is actually still Running.
+       */
+      let liveSessions = [];
+
+      const hasSavedSessions =
+        Object.values(draft.lineJobs || {}).some(
+          (job) => job?.sessionId
+        ) ||
+        Boolean(draft.freeJob?.sessionId);
+
+      if (hasSavedSessions) {
+        try {
+          const response = await API.get("/production-sessions/live");
+
+          liveSessions = response?.data?.data || [];
+        } catch (err) {
+          console.error(
+            "Failed to reconcile live production sessions:",
+            err
+          );
+
+          /*
+           * Do NOT destroy the local draft when the server request
+           * itself fails. The operator may simply have a temporary
+           * network/API problem.
+           */
+          liveSessions = null;
+        }
+      }
+
+      /*
+       * ---------------------------------------------------------
+       * LINE JOB RECONCILIATION
+       * ---------------------------------------------------------
+       */
+      let reconciledLineJobs = draft.lineJobs || {};
+
+      if (liveSessions !== null) {
+        const liveSessionIds = new Set(
+          liveSessions.map((session) => String(session._id))
+        );
+
+        reconciledLineJobs = Object.fromEntries(
+          Object.entries(reconciledLineJobs).map(([lineId, job]) => {
+            if (!job?.sessionId) {
+              return [lineId, job];
+            }
+
+            const sessionIsRunning = liveSessionIds.has(
+              String(job.sessionId)
+            );
+
+            if (sessionIsRunning) {
+              return [
+                lineId,
+                {
+                  ...job,
+                  running: true,
+                },
+              ];
+            }
+
+            /*
+             * Session is no longer Running on the server.
+             * Remove stale session metadata so the UI cannot
+             * continue showing a fake running session.
+             */
+            return [
+              lineId,
+              {
+                ...job,
+                running: false,
+                sessionId: null,
+                startTime: null,
+              },
+            ];
+          })
+        );
+      }
+
+      setLineJobs(reconciledLineJobs);
+
+      /*
+       * ---------------------------------------------------------
+       * FREE JOB RECONCILIATION
+       * ---------------------------------------------------------
+       */
+      let reconciledFreeJob = draft.freeJob || {
+        startTime: null,
+        running: false,
+        sessionId: null,
+      };
+
+      if (liveSessions !== null && reconciledFreeJob?.sessionId) {
+        const sessionIsRunning = liveSessions.some(
+          (session) =>
+            String(session._id) ===
+            String(reconciledFreeJob.sessionId)
+        );
+
+        if (sessionIsRunning) {
+          reconciledFreeJob = {
+            ...reconciledFreeJob,
+            running: true,
+          };
+        } else {
+          reconciledFreeJob = {
+            ...reconciledFreeJob,
+            running: false,
+            sessionId: null,
+            startTime: null,
+          };
+        }
+      }
+
+      setFreeJob(reconciledFreeJob);
+
+      const hasSomething =
+        draft.productionLog?.length ||
+        draft.defectLog?.length ||
+        draft.downtimes?.length ||
+        draft.activeDowntime;
+
+      if (hasSomething) {
+        message.info(
+          "Restored your unsaved shift entry from this browser"
+        );
+      }
     }
+
     setDraftLoaded(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.email, draftLoaded]);
+  };
+
+  hydrateDraft();
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [user?.email, draftLoaded]);
 
   useEffect(() => {
     if (!user?.email || !draftLoaded) return; // don't overwrite a real draft with blank initial state before hydration runs
@@ -498,10 +652,34 @@ export default function UserProductionPage() {
 
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
-  const handleResetAll = () => {
+  const handleResetAll = async () => {
+    const runningSessionIds = [
+      ...Object.values(lineJobs)
+        .filter((job) => job?.running && job?.sessionId)
+        .map((job) => job.sessionId),
+
+      ...(freeJob?.running && freeJob?.sessionId
+        ? [freeJob.sessionId]
+        : []),
+    ];
+
+    try {
+      for (const sessionId of [...new Set(runningSessionIds)]) {
+        await API.put(`/production-sessions/${sessionId}/cancel`, {
+          reason: "Production entry reset by operator",
+        });
+      }
+    } catch (err) {
+      message.error(
+        err?.response?.data?.message ||
+        "Unable to cancel active production session. Entry was not reset."
+      );
+      return;
+    }
+
     setProductionLog([]); setDefectLog([]); setConsumableLog([]);
     setDowntimes([]); setActiveDowntime(null);
-    setLineJobs({}); setFreeJob({ startTime: null, running: false });
+    setLineJobs({}); setFreeJob({ startTime: null, running: false, sessionId: null });
     setSelectedModelId(null); setCurrentModelParts([]); setCurrentPartQtys({});
     setActiveLineIdx(0); setLineQty(0);
     setRequiredManpower(0); setAvailableManpower(0);
@@ -560,10 +738,57 @@ export default function UserProductionPage() {
   };
 
   /** Operator marks the moment loading begins on this line */
-  const handleStartLineJob = () => {
+  const handleStartLineJob = async () => {
     if (!activeLine) return;
-    setLineJobs((prev) => ({ ...prev, [activeLine._id]: { startTime: dayjs().toISOString(), running: true } }));
-    message.info(`Job started on ${activeLineLabel}`);
+
+    const modelId = activeLine.modelId?._id || activeLine.modelId;
+    const shiftId = activeShift?._id;
+
+    if (!modelId) {
+      message.error("Model is missing for this production line");
+      return;
+    }
+
+    if (!shiftId) {
+      message.error("Active shift is not available");
+      return;
+    }
+
+    const startTime = dayjs().toISOString();
+
+    try {
+      const response = await API.post("/production-sessions/start", {
+        modelId,
+        shiftId,
+        conveyorStrengthId: activeLine._id,
+        startTime,
+      });
+
+      const session = response?.data?.data;
+
+      if (!session?._id) {
+        throw new Error("Production session ID was not returned by the server");
+      }
+
+      setLineJobs((prev) => ({
+        ...prev,
+        [activeLine._id]: {
+          startTime,
+          running: true,
+          sessionId: session._id,
+        },
+      }));
+
+      message.success(`Job started on ${activeLineLabel}`);
+    } catch (err) {
+      console.error("Failed to start production session:", err);
+
+      message.error(
+        err?.response?.data?.message ||
+        err?.message ||
+        "Unable to start production session"
+      );
+    }
   };
 
   /** "Complete & Add to List" — stops this line's job timer, logs start/end/duration */
@@ -676,7 +901,16 @@ export default function UserProductionPage() {
   };
 
   const handleRemoveProductionRow = (key) => {
-    setProductionLog((prev) => prev.filter((r) => r.key !== key));
+    const row = productionLog.find((item) => item.key === key);
+
+    if (row?.sessionId) {
+      message.error(
+        "This production row is linked to a completed session and cannot be removed."
+      );
+      return;
+    }
+
+    setProductionLog((prev) => prev.filter((item) => item.key !== key));
   };
 
   const allPartNames = useMemo(() => {

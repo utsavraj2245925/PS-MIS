@@ -25,6 +25,7 @@ export const updateSessionParts = async (req, res) => {
     const session = await productionSessionService.updateProductionSessionParts({
       sessionId,
       parts: req.body.parts,
+      user: req.user,
     });
 
     return res.status(200).json({ success: true, message: "Session part quantities updated successfully", data: session });
@@ -44,6 +45,7 @@ export const updateSessionDowntime = async (req, res) => {
     const session = await productionSessionService.updateProductionSessionDowntime({
       sessionId,
       downtimes: req.body.downtimes,
+      user: req.user,
     });
 
     return res.status(200).json({ success: true, message: "Session downtime updated successfully", data: session });
@@ -59,7 +61,9 @@ export const updateSessionDowntime = async (req, res) => {
 
 export const getLiveProductionSession = async (req, res) => {
   try {
-    const session = await productionSessionService.getLiveProductionSession(req.query);
+    const session = await productionSessionService.getLiveProductionSession({
+      userId: req.user?._id || req.user?.id,
+    });
 
     return res.status(200).json({ success: true, message: "Live production session fetched successfully", data: session });
   } catch (error) {
@@ -74,7 +78,10 @@ export const getLiveProductionSession = async (req, res) => {
 
 export const getProductionSessionById = async (req, res) => {
   try {
-    const session = await productionSessionService.getProductionSessionById(req.params.id);
+    const session = await productionSessionService.getProductionSessionById(
+      req.params.id,
+      req.user
+    );
 
     if (!session) {
       return res.status(404).json({ success: false, message: "Production session not found" });
@@ -98,6 +105,7 @@ export const completeProductionSession = async (req, res) => {
       sessionId,
       parts: req.body.parts,
       endTime: req.body.endTime,
+      user: req.user,
     });
 
     return res.status(200).json({ success: true, message: "Production session completed successfully", data: session });
@@ -117,6 +125,7 @@ export const cancelProductionSession = async (req, res) => {
     const session = await productionSessionService.cancelProductionSession({
       sessionId,
       reason: req.body.reason,
+      user: req.user,
     });
 
     return res.status(200).json({ success: true, message: "Production session cancelled successfully", data: session });
@@ -132,7 +141,7 @@ export const cancelProductionSession = async (req, res) => {
 
 export const getProductionSessionHistory = async (req, res) => {
   try {
-    const result = await productionSessionService.getProductionSessionHistory(req.query);
+    const result = await productionSessionService.getProductionSessions(req.query);
 
     return res.status(200).json({ success: true, message: "Production session history fetched successfully", data: result });
   } catch (error) {
@@ -147,7 +156,7 @@ export const getProductionSessionHistory = async (req, res) => {
 
 export const getProductionSessionPerformance = async (req, res) => {
   try {
-    const result = await productionSessionService.getProductionSessionPerformance(req.params.id);
+    const result = await productionSessionService.getSessionPerformance(req.params.id);
 
     return res.status(200).json({ success: true, message: "Production session performance fetched successfully", data: result });
   } catch (error) {

@@ -118,6 +118,53 @@ const getSessionContext = async ({ userId, shiftId, conveyorStrengthId }) => {
       throw error;
     }
   }
+  
+  if (user.role === "user") {
+  const userPlantId = user.plantId?._id || user.plantId;
+  const userLocationId = user.locationId;
+  const userShiftId = user.shiftId;
+  const userConveyorId = user.conveyorId;
+
+  if (
+    !userPlantId ||
+    String(selectedShift.plantId) !== String(userPlantId)
+  ) {
+    const error = new Error("Selected shift is outside your assigned plant");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (
+    !userShiftId ||
+    String(selectedShift._id) !== String(userShiftId)
+  ) {
+    const error = new Error("Selected shift is outside your assigned shift");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (
+    userLocationId &&
+    String(selectedShift.locationId) !== String(userLocationId)
+  ) {
+    const error = new Error("Selected shift is outside your assigned location");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (strength) {
+    if (
+      String(strength.plantId) !== String(userPlantId) ||
+      String(strength.shiftId) !== String(selectedShift._id) ||
+      !userConveyorId ||
+      String(strength.conveyorId) !== String(userConveyorId)
+    ) {
+      const error = new Error("Selected conveyor line is outside your assigned scope");
+      error.statusCode = 403;
+      throw error;
+    }
+  }
+}
 
   return { user, selectedShift, strength };
 };
@@ -137,19 +184,6 @@ export const startProductionSession = async ({
   validateObjectId(modelId, "Model");
   validateObjectId(shiftId, "Shift");
 
-  const existingLive = await ProductionSession.findOne({
-    reportedBy: userId,
-    modelId,
-    shiftId,
-    status: "Running",
-  });
-
-  if (existingLive) {
-    const error = new Error("This model already has an active production session");
-    error.statusCode = 409;
-    throw error;
-  }
-
   const [{ user, selectedShift, strength }, selectedModel] = await Promise.all([
     getSessionContext({ userId, shiftId, conveyorStrengthId }),
     Model.findById(modelId).lean(),
@@ -158,6 +192,22 @@ export const startProductionSession = async ({
   if (!selectedModel) {
     const error = new Error("Model not found");
     error.statusCode = 404;
+    throw error;
+  }
+
+  const effectiveConveyorId = strength?.conveyorId || user.conveyorId || null;
+
+  const existingLive = await ProductionSession.findOne({
+    reportedBy: user._id,
+    modelId: selectedModel._id,
+    shiftId: selectedShift._id,
+    conveyorId: effectiveConveyorId,
+    status: "Running",
+  });
+
+  if (existingLive) {
+    const error = new Error("This model already has an active production session on this conveyor");
+    error.statusCode = 409;
     throw error;
   }
 
@@ -205,7 +255,7 @@ export const startProductionSession = async ({
     modelName: selectedModel.modelName,
 
     conveyorStrengthId: strength?._id || null,
-    conveyorId: strength?.conveyorId || user.conveyorId || null,
+    conveyorId: effectiveConveyorId,
     conveyorName: strength?.conveyorName || "",
 
     startTime: actualStartTime,
@@ -216,7 +266,7 @@ export const startProductionSession = async ({
     runningMinutes: 0,
 
     totalProductionQty: 0,
-    averageProductionRate: 0,
+    averageProductionRatePerHour: 0,
 
     demandPerShift,
     targetPerHour,
@@ -239,6 +289,7 @@ export const startProductionSession = async ({
 export const updateProductionSessionParts = async ({
   sessionId,
   parts = [],
+  user,
 }) => {
   validateObjectId(sessionId, "Production Session");
 
@@ -247,6 +298,13 @@ export const updateProductionSessionParts = async ({
   if (!session) {
     const error = new Error("Production session not found");
     error.statusCode = 404;
+    throw error;
+  }
+  const actorId = user?._id || user?.id;
+
+  if (!actorId || String(session.reportedBy) !== String(actorId)) {
+    const error = new Error("You are not authorized to modify this production session");
+    error.statusCode = 403;
     throw error;
   }
 
@@ -323,6 +381,7 @@ export const updateProductionSessionParts = async ({
 export const updateProductionSessionDowntime = async ({
   sessionId,
   downtimes = [],
+  user,
 }) => {
   validateObjectId(sessionId, "Production Session");
 
@@ -331,6 +390,14 @@ export const updateProductionSessionDowntime = async ({
   if (!session) {
     const error = new Error("Production session not found");
     error.statusCode = 404;
+    throw error;
+  }
+
+  const actorId = user?._id || user?.id;
+
+  if (!actorId || String(session.reportedBy) !== String(actorId)) {
+    const error = new Error("You are not authorized to modify this production session");
+    error.statusCode = 403;
     throw error;
   }
 
@@ -406,7 +473,7 @@ export const getLiveProductionSession = async ({
    GET SINGLE SESSION
 ========================================================= */
 
-export const getProductionSessionById = async (sessionId) => {
+export const getProductionSessionById = async (sessionId, user = null) => {
   validateObjectId(sessionId, "Production Session");
 
   const session = await ProductionSession.findById(sessionId)
@@ -421,6 +488,16 @@ export const getProductionSessionById = async (sessionId) => {
     throw error;
   }
 
+  if (user) {
+    const actorId = user?._id || user?.id;
+
+    if (!actorId || String(session.reportedBy?._id || session.reportedBy) !== String(actorId)) {
+      const error = new Error("You are not authorized to view this production session");
+      error.statusCode = 403;
+      throw error;
+    }
+  }
+
   return session;
 };
 
@@ -432,6 +509,7 @@ export const completeProductionSession = async ({
   sessionId,
   parts,
   endTime = new Date(),
+  user,
 }) => {
   validateObjectId(sessionId, "Production Session");
 
@@ -440,6 +518,14 @@ export const completeProductionSession = async ({
   if (!session) {
     const error = new Error("Production session not found");
     error.statusCode = 404;
+    throw error;
+  }
+
+  const actorId = user?._id || user?.id;
+
+  if (!actorId || String(session.reportedBy) !== String(actorId)) {
+    const error = new Error("You are not authorized to modify this production session");
+    error.statusCode = 403;
     throw error;
   }
 
@@ -554,6 +640,7 @@ export const completeProductionSession = async ({
 export const cancelProductionSession = async ({
   sessionId,
   reason = "",
+  user,
 }) => {
   validateObjectId(sessionId, "Production Session");
 
@@ -562,6 +649,13 @@ export const cancelProductionSession = async ({
   if (!session) {
     const error = new Error("Production session not found");
     error.statusCode = 404;
+    throw error;
+  }
+  const actorId = user?._id || user?.id;
+
+  if (!actorId || String(session.reportedBy) !== String(actorId)) {
+    const error = new Error("You are not authorized to modify this production session");
+    error.statusCode = 403;
     throw error;
   }
 
@@ -574,6 +668,7 @@ export const cancelProductionSession = async ({
   session.status = "Cancelled";
   session.cancelReason = reason;
   session.endTime = new Date();
+  
 
   const timing = calculateSessionTiming({
     startTime: session.startTime,

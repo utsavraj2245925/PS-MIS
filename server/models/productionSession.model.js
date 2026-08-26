@@ -160,6 +160,7 @@ const productionSessionSchema = new mongoose.Schema(
       type: String,
       unique: true,
       index: true,
+      default: () => new mongoose.Types.ObjectId().toString(),
     },
 
     status: {
@@ -167,6 +168,12 @@ const productionSessionSchema = new mongoose.Schema(
       enum: ["Running", "Completed", "Cancelled"],
       default: "Running",
       index: true,
+    },
+
+    cancelReason: {
+      type: String,
+      trim: true,
+      default: "",
     },
 
 
@@ -224,7 +231,13 @@ const productionSessionSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-
+     
+    conveyorStrengthId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ConveyorStrength",
+      default: null,
+      index: true,
+    },
     conveyorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Conveyor",
