@@ -324,7 +324,7 @@ export default function UserProductionPage() {
     if (stopType === "Unplanned" && wordCount(stopRemark) === 0) { message.error("Description is required for Unplanned downtime"); return; }
     if (stopType === "Unplanned" && wordCount(stopRemark) > 10) { message.error("Description cannot exceed 10 words"); return; }
 
-    const reasonName = downtimeTypes.find((t) => t._id === stopReasonId)?.name || "";
+  const reasonName = downtimeTypes.find((t) => t._id === stopReasonId)?.name || "";
     setActiveDowntime({
       key: uid(), startTime: dayjs().toISOString(), type: stopType,
       downtimeTypeId: stopReasonId, downtimeName: reasonName,
@@ -334,14 +334,49 @@ export default function UserProductionPage() {
     message.info(`Line stopped — ${stopType} downtime started`);
   };
 
-  const resumeProduction = () => {
-    if (!activeDowntime) return;
-    const endTime = dayjs();
-    const duration = minutesBetween(activeDowntime.startTime, endTime);
-    setDowntimes((prev) => [...prev, { ...activeDowntime, endTime: endTime.toISOString(), duration }]);
-    setActiveDowntime(null);
-    message.success("Production resumed");
+  const resumeProduction = async () => {
+  if (!activeDowntime) return;
+  const endTime = dayjs();
+  const duration = minutesBetween(activeDowntime.startTime, endTime);
+
+  const closedDowntime = {
+    ...activeDowntime,
+    endTime: endTime.toISOString(),
+    duration,
   };
+
+  // Collect all currently running session IDs
+  const runningSessionIds = [
+    ...Object.values(lineJobs)
+      .filter((job) => job?.running && job?.sessionId)
+      .map((job) => job.sessionId),
+    ...(freeJob?.running && freeJob?.sessionId ? [freeJob.sessionId] : []),
+  ];
+
+  // Get all closed downtimes including this new one
+  const allClosedDowntimes = [...downtimes, closedDowntime];
+  const cleanedDowntimes = allClosedDowntimes.map((d) => ({
+    downtimeTypeId: d.downtimeTypeId,
+    type: d.type,
+    startTime: d.startTime,
+    endTime: d.endTime,
+    duration: d.duration,
+    remark: d.remark || "",
+  }));
+
+  // Fire and forget — don't block the UI for downtime sync errors
+  for (const sessionId of [...new Set(runningSessionIds)]) {
+    API.put(`/production-sessions/${sessionId}/downtime`, {
+      downtimes: cleanedDowntimes,
+    }).catch((err) => {
+      console.error("Failed to sync downtime to session:", sessionId, err);
+    });
+  }
+
+  setDowntimes((prev) => [...prev, closedDowntime]);
+  setActiveDowntime(null);
+  message.success("Production resumed");
+};
 
   /** How many seconds of downtime (closed entries + the currently-active one,
       if any) overlap the given [intervalStart, intervalEnd] window. Used to
@@ -421,35 +456,160 @@ export default function UserProductionPage() {
       Master. Which one is "current" is computed live in `activeShift` above. */
   const fetchPlantShifts = useCallback(async () => {
     const plantId = user?.plantId?._id || user?.plantId;
-    if (!plantId) { setPlantShifts([]); return; }
+
+    if (!plantId) {
+      setPlantShifts([]);
+      return;
+    }
+
     try {
       const { data } = await API.get(`/shifts/plant/${plantId}`);
       setPlantShifts(data?.data || []);
-    } catch {
+    } catch (error) {
+      console.error("Failed to load plant shifts:", error);
       setPlantShifts([]);
     }
-  }, [user]);
+  }, [user?.plantId?._id, user?.plantId]);
 
   const loadEverything = useCallback(async () => {
     setPageLoading(true);
+
     try {
       await Promise.all([
-        fetchModels(), fetchRejectTypes(), fetchReworkTypes(),
-        fetchDowntimeTypes(), fetchMaterials(), fetchPlantShifts(),
+        fetchModels(),
+        fetchRejectTypes(),
+        fetchReworkTypes(),
+        fetchDowntimeTypes(),
+        fetchMaterials(),
+        fetchPlantShifts(),
       ]);
     } catch (error) {
       console.error("Error loading data:", error);
-      message.error(error?.response?.data?.message || "Failed to load data");
+
+      message.error(
+        error?.response?.data?.message || "Failed to load data"
+      );
     } finally {
       setPageLoading(false);
     }
-  }, [fetchModels, fetchRejectTypes, fetchReworkTypes, fetchDowntimeTypes, fetchMaterials, fetchPlantShifts]);
+  }, [
+    fetchModels,
+    fetchRejectTypes,
+    fetchReworkTypes,
+    fetchDowntimeTypes,
+    fetchMaterials,
+    fetchPlantShifts,
+  ]);
 
+  /*
+  * =========================================================
+  * RECONCILE DRAFT PRODUCTION SESSIONS
+  * =========================================================
+  *
+  * Draft/localStorage may contain an old sessionId.
+  * Backend /production-sessions/live is the source of truth.
+  */
+  const reconcileDraftSessions = useCallback(async () => {
+    if (!user?.email) return;
+
+    try {
+      const { data } = await API.get("/production-sessions/live");
+
+      const liveSessions = Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data?.sessions)
+          ? data.sessions
+          : Array.isArray(data)
+            ? data
+            : [];
+
+      const liveSessionMap = new Map(
+        liveSessions
+          .filter((session) => session?._id)
+          .map((session) => [
+            String(session._id),
+            session,
+          ])
+      );
+
+      /*
+      * LINE JOBS
+      */
+      setLineJobs((prev) => {
+        const next = { ...prev };
+
+        Object.entries(next).forEach(([lineId, job]) => {
+          if (!job?.sessionId) return;
+
+          const serverSession = liveSessionMap.get(
+            String(job.sessionId)
+          );
+
+          if (!serverSession) {
+            next[lineId] = {
+              ...job,
+              running: false,
+              sessionId: null,
+              startTime: null,
+            };
+          } else {
+            next[lineId] = {
+              ...job,
+              running: true,
+            };
+          }
+        });
+
+        return next;
+      });
+
+      /*
+      * FREE-FORM JOB
+      */
+      setFreeJob((prev) => {
+        if (!prev?.sessionId) return prev;
+
+        const serverSession = liveSessionMap.get(
+          String(prev.sessionId)
+        );
+
+        if (!serverSession) {
+          return {
+            ...prev,
+            running: false,
+            sessionId: null,
+            startTime: null,
+          };
+        }
+
+        return {
+          ...prev,
+          running: true,
+        };
+      });
+
+    } catch (err) {
+      console.error(
+        "Failed to reconcile production sessions:",
+        err
+      );
+    }
+  }, [user?.email]);
+
+  
+
+  /** Load plant/user data after authentication is ready.*/
   useEffect(() => {
-  if (authLoading || !user) return; // wait for /auth/me to resolve before fetching plant-scoped data
-  loadEverything();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [authLoading, user?._id, loadEverything]);
+    if (authLoading || !user) return;
+
+    loadEverything();
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    authLoading,
+    user?._id,
+    loadEverything,
+  ]);
 
   /* ════════════════════════════════════════════════════════
      DRAFT PERSISTENCE — hydrate once per operator, then keep
@@ -650,6 +810,7 @@ export default function UserProductionPage() {
     requiredManpower, availableManpower, user?.email, draftLoaded,
   ]);
 
+
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   const handleResetAll = async () => {
@@ -741,7 +902,9 @@ export default function UserProductionPage() {
   const handleStartLineJob = async () => {
     if (!activeLine) return;
 
-    const modelId = activeLine.modelId?._id || activeLine.modelId;
+    const modelId =
+      activeLine.modelId?._id || activeLine.modelId;
+
     const shiftId = activeShift?._id;
 
     if (!modelId) {
@@ -757,21 +920,27 @@ export default function UserProductionPage() {
     const startTime = dayjs().toISOString();
 
     try {
-      const response = await API.post("/production-sessions/start", {
-        modelId,
-        shiftId,
-        conveyorStrengthId: activeLine._id,
-        startTime,
-      });
+      const response = await API.post(
+        "/production-sessions/start",
+        {
+          modelId,
+          shiftId,
+          conveyorStrengthId: activeLine._id,
+          startTime,
+        }
+      );
 
       const session = response?.data?.data;
 
       if (!session?._id) {
-        throw new Error("Production session ID was not returned by the server");
+        throw new Error(
+          "Production session ID was not returned by the server"
+        );
       }
 
       setLineJobs((prev) => ({
         ...prev,
+
         [activeLine._id]: {
           startTime,
           running: true,
@@ -779,9 +948,14 @@ export default function UserProductionPage() {
         },
       }));
 
-      message.success(`Job started on ${activeLineLabel}`);
+      message.success(
+        `Job started on ${activeLineLabel}`
+      );
     } catch (err) {
-      console.error("Failed to start production session:", err);
+      console.error(
+        "Failed to start production session:",
+        err
+      );
 
       message.error(
         err?.response?.data?.message ||
@@ -792,37 +966,62 @@ export default function UserProductionPage() {
   };
 
   /** "Complete & Add to List" — stops this line's job timer, logs start/end/duration */
-  const handleAddLineProductionRow = () => {
-    if (!activeLine) return;
-    if (!activeLineJob?.running) { message.error("Click Start Job before logging production"); return; }
-    if (!lineQty || lineQty <= 0) { message.error("Enter a production quantity"); return; }
+  const handleAddLineProductionRow = async () => {
+  if (!activeLine) return;
+  if (!activeLineJob?.running) { message.error("Click Start Job before logging production"); return; }
+  if (!lineQty || lineQty <= 0) { message.error("Enter a production quantity"); return; }
 
-    const startTime = activeLineJob.startTime;
-    const endTime = dayjs().toISOString();
-    const rawSeconds = dayjs(endTime).diff(dayjs(startTime), "second");
-    const durationMinutes = Math.max(Math.round((rawSeconds - downtimeOverlapSeconds(startTime, endTime)) / 60), 0);
+  const sessionId = activeLineJob?.sessionId;
+  const startTime = activeLineJob.startTime;
+  const endTime = dayjs().toISOString();
+  const rawSeconds = dayjs(endTime).diff(dayjs(startTime), "second");
+  const durationMinutes = Math.max(Math.round((rawSeconds - downtimeOverlapSeconds(startTime, endTime)) / 60), 0);
 
-    setProductionLog((prev) => [
-      ...prev,
-      {
-        key: uid(),
-        modelId: activeLine.modelId?._id || activeLine.modelId,
-        modelName: activeLine.modelId?.modelName || activeLine.modelId?.name || "",
-        conveyorId: activeLine._id,
-        conveyorName: activeLineLabel,
-        demandPerShift: activeLine.demandPerShift || 0,
-        startTime, endTime, durationMinutes,
-        parts: [{
-          partId: activeLine.partId?._id || activeLine.partId,
-          partName: activeLine.partId?.partName || activeLine.partId?.name || "",
-          qty: lineQty,
-        }],
-      },
-    ]);
-    setLineJobs((prev) => ({ ...prev, [activeLine._id]: { startTime: null, running: false } }));
-    setLineQty(0);
-    message.success(`${activeLineLabel} logged — ${formatHM(durationMinutes)}`);
-  };
+  const parts = [{
+    partId: activeLine.partId?._id || activeLine.partId,
+    partName: activeLine.partId?.partName || activeLine.partId?.name || "",
+    quantity: lineQty,
+  }];
+
+  if (sessionId) {
+    try {
+      await API.put(`/production-sessions/${sessionId}/parts`, { parts });
+      await API.put(`/production-sessions/${sessionId}/complete`, {
+        parts,
+        endTime,
+      });
+    } catch (err) {
+      message.error(err?.response?.data?.message || "Failed to complete production session");
+      return; // do NOT add row if backend failed
+    }
+  }
+
+  setProductionLog((prev) => [
+    ...prev,
+    {
+      key: uid(),
+      modelId: activeLine.modelId?._id || activeLine.modelId,
+      modelName: activeLine.modelId?.modelName || activeLine.modelId?.name || "",
+      conveyorId: activeLine._id,
+      conveyorName: activeLineLabel,
+      demandPerShift: activeLine.demandPerShift || 0,
+      startTime, endTime, durationMinutes,
+      sessionId: sessionId || null, // ← this makes the remove-guard work
+      parts: [{
+        partId: activeLine.partId?._id || activeLine.partId,
+        partName: activeLine.partId?.partName || activeLine.partId?.name || "",
+        qty: lineQty,
+      }],
+    },
+  ]);
+
+  setLineJobs((prev) => ({
+    ...prev,
+    [activeLine._id]: { startTime: null, running: false, sessionId: null },
+  }));
+  setLineQty(0);
+  message.success(`${activeLineLabel} logged — ${formatHM(durationMinutes)}`);
+};
 
   const activeLineRows = useMemo(
     () => activeLine ? productionLog.filter((r) => r.conveyorId === activeLine._id) : [],
@@ -839,9 +1038,13 @@ export default function UserProductionPage() {
   const selectableModels = useMemo(() => models.filter((m) => !usedModelIds.has(m._id)), [models, usedModelIds]);
 
   const handleModelChange = async (modelId) => {
+    if (freeJob.running) {
+      message.error("Stop the current job before switching model");
+      return;
+    }
     setSelectedModelId(modelId);
     setCurrentPartQtys({});
-    setFreeJob({ startTime: null, running: false });
+    setFreeJob({ startTime: null, running: false, sessionId: null });
     setLoadingCurrentParts(true);
     const parts = await fetchPartsForModel(modelId);
     setCurrentModelParts(parts);
@@ -852,24 +1055,63 @@ export default function UserProductionPage() {
     setCurrentPartQtys((prev) => ({ ...prev, [partId]: qty || 0 }));
   };
 
-  const handleStartFreeJob = () => {
+  const handleStartFreeJob = async () => {
     if (!selectedModelId) { message.error("Select a model first"); return; }
-    setFreeJob({ startTime: dayjs().toISOString(), running: true });
+    if (!activeShift?._id) { message.error("No active shift available"); return; }
+
+    const startTime = dayjs().toISOString();
+
+    try {
+      const response = await API.post("/production-sessions/start", {
+        modelId: selectedModelId,
+        shiftId: activeShift._id,
+        startTime,
+      });
+
+      const session = response?.data?.data;
+      if (!session?._id) throw new Error("No session ID returned");
+
+      setFreeJob({ startTime, running: true, sessionId: session._id });
+      message.success("Job started");
+    } catch (err) {
+      message.error(err?.response?.data?.message || "Unable to start production session");
+    }
   };
+
   const freeJobSeconds = freeJob.running
     ? Math.max(now.diff(dayjs(freeJob.startTime), "second") - downtimeOverlapSeconds(freeJob.startTime, now), 0) : 0;
+
   const freeJobPaused = freeJob.running && !!activeDowntime;
 
-  const handleAddProductionRow = () => {
+  const handleAddProductionRow = async () => {
     if (!selectedModelId) { message.error("Please select a model first"); return; }
     if (!freeJob.running) { message.error("Click Start Job before logging production"); return; }
     const anyQty = currentModelParts.some((p) => (currentPartQtys[p._id] || 0) > 0);
     if (!anyQty) { message.error("Enter production qty for at least one part"); return; }
 
+    const sessionId = freeJob?.sessionId;
     const startTime = freeJob.startTime;
     const endTime = dayjs().toISOString();
     const rawSeconds = dayjs(endTime).diff(dayjs(startTime), "second");
     const durationMinutes = Math.max(Math.round((rawSeconds - downtimeOverlapSeconds(startTime, endTime)) / 60), 0);
+
+    const parts = currentModelParts
+      .filter((p) => (currentPartQtys[p._id] || 0) > 0)
+      .map((p) => ({
+        partId: p._id,
+        partName: p.partName || p.name,
+        quantity: currentPartQtys[p._id] || 0,
+      }));
+
+    if (sessionId) {
+      try {
+        await API.put(`/production-sessions/${sessionId}/parts`, { parts });
+        await API.put(`/production-sessions/${sessionId}/complete`, { parts, endTime });
+      } catch (err) {
+        message.error(err?.response?.data?.message || "Failed to complete production session");
+        return;
+      }
+    }
 
     const model = models.find((m) => m._id === selectedModelId);
     setProductionLog((prev) => [
@@ -880,24 +1122,21 @@ export default function UserProductionPage() {
         modelName: model?.modelName || model?.name || "",
         conveyorId: null, conveyorName: null, demandPerShift: 0,
         startTime, endTime, durationMinutes,
+        sessionId: sessionId || null,
         parts: currentModelParts.map((p) => ({
-        partId: p._id,
-        partName: p.partName || p.name,
-        qty: currentPartQtys[p._id] || 0,
-
-        area: Number(p.area || 0),
-
-        partsPerHanger: Number(
-          p.partsPerHanger || 1
-        ),
-      })),
+          partId: p._id,
+          partName: p.partName || p.name,
+          qty: currentPartQtys[p._id] || 0,
+          area: Number(p.area || 0),
+          partsPerHanger: Number(p.partsPerHanger || 1),
+        })),
       },
     ]);
 
     setSelectedModelId(null);
     setCurrentModelParts([]);
     setCurrentPartQtys({});
-    setFreeJob({ startTime: null, running: false });
+    setFreeJob({ startTime: null, running: false, sessionId: null });
   };
 
   const handleRemoveProductionRow = (key) => {
@@ -1349,7 +1588,8 @@ export default function UserProductionPage() {
       message.success("Production entry submitted successfully!");
 
       setProductionLog([]); setDefectLog([]); setDowntimes([]);
-      setActiveDowntime(null); setLineJobs({}); setFreeJob({ startTime: null, running: false });
+      setActiveDowntime(null); setLineJobs({}); 
+      setFreeJob({ startTime: null, running: false, sessionId: null });
       setConsumableLog([]); setRequiredManpower(0); setAvailableManpower(0);
       setActiveLineIdx(0); setLineQty(0);
     } catch (err) {

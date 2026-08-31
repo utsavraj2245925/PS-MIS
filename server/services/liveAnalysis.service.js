@@ -381,7 +381,7 @@ export const getLiveSessions = async ({ locationId, plantId, shiftId, conveyorId
   const nextDate = new Date(selectedDate);
   nextDate.setDate(nextDate.getDate() + 1);
 
-  filter.createdAt = { $gte: selectedDate, $lt: nextDate };
+  filter.startTime = { $gte: selectedDate, $lt: nextDate };
 
   return ProductionSession.find(filter).sort({ startTime: 1, createdAt: 1 }).lean();
 };
@@ -446,9 +446,9 @@ export const calculateLiveSessionPerformance = (session, now = new Date()) => {
   });
 
   const target = num(
-    session.target ||
     session.demandPerShift ||
-    session.targetQuantity
+    session.targetPerHour ||
+    0
   );
 
   const achievement = calculateAchievement({
@@ -852,7 +852,7 @@ export const getLiveAnalysis = async ({
   }, 0);
 
   const totalTarget = sessions.reduce(
-    (sum, session) => sum + num(session.target || session.demandPerShift),
+    (sum, session) => sum + num(session.demandPerShift || 0),
     0
   );
 
