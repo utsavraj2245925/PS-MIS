@@ -1,21 +1,9 @@
 import React from "react";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { Gauge } from "lucide-react";
 import dayjs from "dayjs";
 import { useDashboard } from "../../../context/DashboardContext";
 import { rangeLabelFromPreset } from "../../../utils/dateRangePresets";
-
-const formatDateTick = (value) => dayjs(value).format("DD MMM");
-
-const CustomTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-lg text-[11px]">
-      <p className="font-semibold text-slate-700 mb-0.5">{dayjs(label).format("DD MMM YYYY")}</p>
-      <p className="text-teal-600 font-semibold">{payload[0].value}% Achievement</p>
-    </div>
-  );
-};
+import Achievement3DBars from "./Achievement3DBars";
 
 const AchievementTrend = () => {
   const { achievementTrend, trendLoading, datePreset, dateRange } = useDashboard() || {};
@@ -42,21 +30,14 @@ const AchievementTrend = () => {
         <div className="flex-1 flex items-center justify-center text-slate-400 text-xs">No data for selected range</div>
       ) : (
         <>
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={achievementTrend} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="achievementFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0d9488" stopOpacity={0.35} />
-                  <stop offset="95%" stopColor="#0d9488" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={formatDateTick} tick={{ fontSize: 10, fill: "#64748b" }} axisLine={{ stroke: "#e2e8f0" }} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} unit="%" />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="achievement" name="Achievement" stroke="#0d9488" strokeWidth={2} fill="url(#achievementFill)" />
-            </AreaChart>
-          </ResponsiveContainer>
+          <div className="flex-1 flex items-end">
+            <Achievement3DBars
+              data={achievementTrend}
+              valueKey="achievement"
+              suffix="%"
+              formatLabel={(d) => dayjs(d.date).format("DD MMM")}
+            />
+          </div>
           <p className="text-[11px] text-slate-500 mt-1">Avg: <span className="font-semibold text-teal-600">{avgAchievement}%</span></p>
         </>
       )}
