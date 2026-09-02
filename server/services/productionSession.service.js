@@ -105,19 +105,29 @@ const getSessionContext = async ({ userId, shiftId, conveyorStrengthId }) => {
     throw error;
   }
 
-  let strength = null;
+    let strength = null;
 
-  if (conveyorStrengthId) {
-    validateObjectId(conveyorStrengthId, "Conveyor Strength");
+    if (conveyorStrengthId) {
+      validateObjectId(conveyorStrengthId, "Conveyor Strength");
 
-    strength = await ConveyorStrength.findById(conveyorStrengthId).lean();
+      strength = await ConveyorStrength.findById(conveyorStrengthId).lean();
 
-    if (!strength) {
-      const error = new Error("Conveyor strength configuration not found");
-      error.statusCode = 404;
-      throw error;
+      if (!strength) {
+        const error = new Error("Conveyor strength configuration not found");
+        error.statusCode = 404;
+        throw error;
+      }
+    } else {
+      // Auto-resolve active conveyor strength if plant and shift are available
+      const effectiveConvId = user.conveyorId || null;
+      const strengthQuery = {
+        plantId: user.plantId?._id || user.plantId,
+        shiftId: selectedShift._id,
+        status: "Active",
+      };
+      if (effectiveConvId) strengthQuery.conveyorId = effectiveConvId;
+      strength = await ConveyorStrength.findOne(strengthQuery).lean();
     }
-  }
   
   if (user.role === "user") {
   const userPlantId = user.plantId?._id || user.plantId;

@@ -1,9 +1,9 @@
-import { Select, DatePicker, Button } from "antd";
+import { Select, DatePicker, Button, ConfigProvider } from "antd";
 import { MapPin, Factory, Sun, Layers, CalendarDays, RefreshCcw } from "lucide-react";
 import { DATE_PRESETS, rangeLabelFromPreset } from "../utils/dateRangePresets";
 
 const FILTER_LABEL =
-  "flex items-center gap-1 text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5 whitespace-nowrap";
+  "flex items-center gap-1 text-[8px] font-bold text-slate-500 uppercase tracking-wider mb-0.5 whitespace-nowrap";
 
 const SELECT_WIDTH = { minWidth: 100, width: "100%" };
 
@@ -42,7 +42,17 @@ export default function DashboardFilterBar({
   })();
 
   return (
-    <div className="flex items-end gap-1.5 xl:gap-2 min-w-0">
+    <ConfigProvider
+      theme={{
+        token: {
+          borderRadius: 24,
+          controlHeightSM: 22,
+          fontSize: 11,
+          colorBorder: "#cbd5e1",
+        },
+      }}
+    >
+      <div className="flex items-end gap-1.5 xl:gap-2 min-w-0">
       {user?.role === "superAdmin" && (
         <div className="w-[108px] sm:w-[118px] lg:w-[128px] shrink-0">
           <div className={FILTER_LABEL}>
@@ -198,6 +208,7 @@ export default function DashboardFilterBar({
           Refresh
         </Button>
       </div>
-    </div>
+      </div>
+    </ConfigProvider>
   );
 }

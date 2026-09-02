@@ -538,12 +538,18 @@ export default function UserProductionPage() {
       setLineJobs((prev) => {
         const next = { ...prev };
 
-        Object.entries(next).forEach(([lineId, job]) => {
-          if (!job?.sessionId) return;
+        // Ensure all live sessions with a conveyorId exist in `next`
+        liveSessions.forEach(s => {
+          if (s.conveyorId && !next[s.conveyorId]) {
+            next[s.conveyorId] = { running: false, sessionId: null, startTime: null };
+          }
+        });
 
-          const serverSession = liveSessionMap.get(
-            String(job.sessionId)
-          );
+        Object.entries(next).forEach(([lineId, job]) => {
+          const orphanedLineSession = liveSessions.find(s => String(s.conveyorId) === String(lineId));
+          const serverSession = job?.sessionId
+            ? liveSessionMap.get(String(job.sessionId))
+            : orphanedLineSession;
 
           if (!serverSession) {
             next[lineId] = {
@@ -556,6 +562,8 @@ export default function UserProductionPage() {
             next[lineId] = {
               ...job,
               running: true,
+              sessionId: serverSession._id,
+              startTime: serverSession.startTime || job?.startTime,
             };
           }
         });
@@ -566,12 +574,12 @@ export default function UserProductionPage() {
       /*
       * FREE-FORM JOB
       */
+      const orphanedFreeSession = liveSessions.find(s => !s.conveyorId);
+      
       setFreeJob((prev) => {
-        if (!prev?.sessionId) return prev;
-
-        const serverSession = liveSessionMap.get(
-          String(prev.sessionId)
-        );
+        const serverSession = prev?.sessionId 
+          ? liveSessionMap.get(String(prev.sessionId)) 
+          : orphanedFreeSession;
 
         if (!serverSession) {
           return {
@@ -585,8 +593,14 @@ export default function UserProductionPage() {
         return {
           ...prev,
           running: true,
+          sessionId: serverSession._id,
+          startTime: serverSession.startTime || prev?.startTime,
         };
       });
+
+      if (orphanedFreeSession) {
+        setSelectedModelId(prev => prev || orphanedFreeSession.modelId?._id || orphanedFreeSession.modelId);
+      }
 
     } catch (err) {
       console.error(
@@ -619,13 +633,21 @@ export default function UserProductionPage() {
   ════════════════════════════════════════════════════════ */
   const [draftLoaded, setDraftLoaded] = useState(false);
 
-  useEffect(() => {
-  if (!user?.email || draftLoaded) return;
+    useEffect(() => {
+      if (!user?.email || draftLoaded || !activeShift?._id) return;
 
-  const hydrateDraft = async () => {
-    const draft = loadDraft(user.email);
+      const hydrateDraft = async () => {
+        const draft = loadDraft(user.email);
+        const today = dayjs().format("YYYY-MM-DD");
 
-    if (draft) {
+        // If draft belongs to a different/completed shift or different date, discard it
+        if (draft && (draft.shiftId !== String(activeShift._id) || draft.shiftDate !== today)) {
+          clearDraft(user.email);
+          setDraftLoaded(true);
+          return;
+        }
+
+      if (draft) {
       if (draft.productionLog?.length) setProductionLog(draft.productionLog);
       if (draft.defectLog?.length) setDefectLog(draft.defectLog);
       if (draft.consumableLog?.length) setConsumableLog(draft.consumableLog);
@@ -798,11 +820,47 @@ export default function UserProductionPage() {
 
   useEffect(() => {
     if (!user?.email || !draftLoaded) return; // don't overwrite a real draft with blank initial state before hydration runs
-    saveDraft(user.email, {
-      productionLog, defectLog, consumableLog, downtimes, activeDowntime,
-      lineJobs, freeJob, selectedModelId, currentPartQtys, activeLineIdx, lineQty,
-      requiredManpower, availableManpower, savedAt: new Date().toISOString(),
-    });
+      saveDraft(user.email, {
+        productionLog, defectLog, consumableLog, downtimes, activeDowntime,
+        lineJobs, freeJob, selectedModelId, currentPartQtys, activeLineIdx, lineQty,
+        requiredManpower, availableManpower, savedAt: new Date().toISOString(),
+        shiftId: String(activeShift?._id || ""),
+        shiftDate: dayjs().format("YYYY-MM-DD"),
+      });
+
+    /* ════════════════════════════════════════════════════════
+      AUTO-RESET ON SHIFT COMPLETION / ROLLOVER
+    ════════════════════════════════════════════════════════ */
+    const activeShiftIdRef = useRef(activeShift?._id ? String(activeShift._id) : null);
+
+    useEffect(() => {
+      if (!activeShift?._id) return;
+      const currentShiftId = String(activeShift._id);
+
+      // If active shift changed (previous shift ended, new shift started)
+      if (activeShiftIdRef.current && activeShiftIdRef.current !== currentShiftId) {
+        setProductionLog([]);
+        setDefectLog([]);
+        setConsumableLog([]);
+        setDowntimes([]);
+        setActiveDowntime(null);
+        setLineJobs({});
+        setFreeJob({ startTime: null, running: false, sessionId: null });
+        setSelectedModelId(null);
+        setCurrentModelParts([]);
+        setCurrentPartQtys({});
+        setRequiredManpower(0);
+        setAvailableManpower(0);
+        setActiveLineIdx(0);
+        setLineQty(0);
+        setDefectForm({ modelId: null, partId: null, defectType: null, defectTypeId: null, quantity: 0 });
+        setDefectModelParts([]);
+        clearDraft(user?.email);
+        message.info(`Previous shift completed. Entry form reset for ${activeShift.shiftName}.`);
+      }
+
+      activeShiftIdRef.current = currentShiftId;
+    }, [activeShift?._id, activeShift?.shiftName, user?.email]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     productionLog, defectLog, consumableLog, downtimes, activeDowntime,
@@ -957,11 +1015,16 @@ export default function UserProductionPage() {
         err
       );
 
-      message.error(
-        err?.response?.data?.message ||
-        err?.message ||
-        "Unable to start production session"
-      );
+      if (err?.response?.status === 409) {
+        message.info(`Found an active job on ${activeLineLabel}. Syncing...`);
+        await reconcileDraftSessions();
+      } else {
+        message.error(
+          err?.response?.data?.message ||
+          err?.message ||
+          "Unable to start production session"
+        );
+      }
     }
   };
 
@@ -1074,7 +1137,12 @@ export default function UserProductionPage() {
       setFreeJob({ startTime, running: true, sessionId: session._id });
       message.success("Job started");
     } catch (err) {
-      message.error(err?.response?.data?.message || "Unable to start production session");
+      if (err?.response?.status === 409) {
+        message.info("Found an active job. Syncing...");
+        await reconcileDraftSessions();
+      } else {
+        message.error(err?.response?.data?.message || "Unable to start production session");
+      }
     }
   };
 

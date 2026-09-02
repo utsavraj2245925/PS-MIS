@@ -1,6 +1,7 @@
 // Sidebar.jsx
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import logo from "../assets/logo/pg-logo.png";
 import {
   LayoutDashboard,
   Factory,
@@ -11,14 +12,12 @@ import {
   BarChart3,
   Settings,
   CheckCircle,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   Workflow,
   Activity,
 } from "lucide-react";
 
-export default function Sidebar({ collapsed, setCollapsed }) {
+export default function Sidebar({ collapsed }) {
   const { user } = useAuth();
   const location = useLocation();
 
@@ -53,38 +52,31 @@ export default function Sidebar({ collapsed, setCollapsed }) {
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-screen bg-slate-950 border-r border-slate-800 text-white transition-all duration-300 z-50 ${
+      className={`fixed left-0 top-0 h-screen bg-slate-50 border-r border-slate-200 text-slate-700 transition-all duration-300 z-50 ${
         collapsed ? "w-[51px]" : "w-[162px]"
       }`}
     >
-      {/* HEADER */}
+      {/* Brand header — logo now lives here, always visible even when
+          collapsed. No toggle button here anymore — moved to Navbar. */}
       <div
-        className={`h-[48px] border-b border-slate-800 flex items-center ${
-          collapsed ? "justify-center" : "justify-between px-[10px]"
+        className={`border-b border-slate-200 flex items-center ${
+          collapsed ? "h-[60px] justify-center" : "h-[60px] px-[16px] gap-3"
         }`}
       >
+        <img src={logo} alt="PG Logo" className={`${collapsed ? "h-[40px] w-[40px]" : "h-[64px] w-[64px]"} object-contain flex-shrink-0`} />
         {!collapsed && (
-          <h2 className="text-[9px] font-semibold tracking-wide text-slate-200">
-            PAINT SHOP MIS
-          </h2>
+          <div className="min-w-0 flex items-center">
+            <h1 className="font-black text-[16px] text-slate-800 tracking-wide truncate">
+              PSMS
+            </h1>
+          </div>
         )}
-
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="text-slate-400 hover:text-white transition-all"
-        >
-          {collapsed ? (
-            <ChevronRight size={14} strokeWidth={2.5} />
-          ) : (
-            <ChevronLeft size={14} strokeWidth={2.5} />
-          )}
-        </button>
       </div>
 
       {/* MASTER DATA */}
       <div className="p-[7px]">
         {!collapsed && (
-          <p className="text-[8px] uppercase text-slate-500 px-[7px] mb-[7px]">
+          <p className="text-[8px] uppercase font-semibold text-slate-400 px-[7px] mb-[7px] mt-[6px]">
             Master Data
           </p>
         )}
@@ -100,10 +92,14 @@ export default function Sidebar({ collapsed, setCollapsed }) {
                   to={item.path}
                   className={`flex items-center rounded-lg transition-all duration-200 ${
                     collapsed ? "justify-center h-[34px]" : "gap-[10px] px-[10px] h-[34px]"
-                  } ${active ? "bg-cyan-700 text-white" : "text-slate-300 hover:bg-slate-800"}`}
+                  } ${
+                    active
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
+                  }`}
                 >
                   <Icon size={15} className="flex-shrink-0" />
-                  {!collapsed && <span className="text-[10px]">{item.name}</span>}
+                  {!collapsed && <span className="text-[10px] font-medium">{item.name}</span>}
                 </Link>
               </li>
             );
@@ -111,10 +107,10 @@ export default function Sidebar({ collapsed, setCollapsed }) {
         </ul>
 
         {/* Divider */}
-        <div className="border-t border-slate-800 my-[14px]"></div>
+        <div className="border-t border-slate-200 my-[14px]"></div>
 
         {!collapsed && (
-          <p className="text-[8px] uppercase text-slate-500 px-[7px] mb-[7px]">
+          <p className="text-[8px] uppercase font-semibold text-slate-400 px-[7px] mb-[7px]">
             Analytics
           </p>
         )}
@@ -124,22 +120,19 @@ export default function Sidebar({ collapsed, setCollapsed }) {
             <Link
               to="/live-analysis"
               className={`w-full flex items-center rounded-lg transition-all ${
-                collapsed
-                  ? "justify-center h-[34px]"
-                  : "gap-[10px] px-[10px] h-[34px]"
+                collapsed ? "justify-center h-[34px]" : "gap-[10px] px-[10px] h-[34px]"
               } ${
                 location.pathname === "/live-analysis"
-                  ? "bg-cyan-700 text-white"
-                  : "text-slate-300 hover:bg-slate-800"
+                  ? "bg-cyan-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
               }`}
             >
               <Activity size={15} />
-              {!collapsed && (
-                <span className="text-[10px]">Live Analysis</span>
-              )}
+              {!collapsed && <span className="text-[10px] font-medium">Live Analysis</span>}
             </Link>
           </li>
-                    {canViewReports && (
+
+          {canViewReports && (
             <li>
               <Link
                 to="/reports"
@@ -147,24 +140,24 @@ export default function Sidebar({ collapsed, setCollapsed }) {
                   collapsed ? "justify-center h-[34px]" : "gap-[10px] px-[10px] h-[34px]"
                 } ${
                   location.pathname === "/reports"
-                    ? "bg-cyan-700 text-white"
-                    : "text-slate-300 hover:bg-slate-800"
+                    ? "bg-cyan-600 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
                 }`}
               >
                 <BarChart3 size={15} />
-                {!collapsed && <span className="text-[10px]">Reports</span>}
+                {!collapsed && <span className="text-[10px] font-medium">Reports</span>}
               </Link>
             </li>
           )}
 
           <li>
             <button
-              className={`w-full flex items-center rounded-lg text-slate-300 hover:bg-slate-800 transition-all ${
+              className={`w-full flex items-center rounded-lg text-slate-600 hover:bg-slate-200/70 hover:text-slate-900 transition-all ${
                 collapsed ? "justify-center h-[34px]" : "gap-[10px] px-[10px] h-[34px]"
               }`}
             >
               <Settings size={15} />
-              {!collapsed && <span className="text-[10px]">Settings</span>}
+              {!collapsed && <span className="text-[10px] font-medium">Settings</span>}
             </button>
           </li>
         </ul>

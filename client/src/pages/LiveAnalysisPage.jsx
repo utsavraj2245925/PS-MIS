@@ -1,896 +1,1143 @@
-// client/src/pages/LiveAnalysisPage.jsx
-//
-// Role-scoped, read-only, 10-second live monitoring view for Paint Shop MIS.
-// Everything rendered here comes from GET /live-analysis (liveAnalysis.service.js)
-// plus existing org master data (/locations, /plants, /shifts/plant/:plantId).
-// No backend files touched. No mock data. No new axios instance, no new packages.
+/**
+ * LiveAnalysisPage.jsx — Paint Shop MIS Real-Time Monitor
+ *
+ * Fixes applied:
+ * 1. Plants cascade from selected locationId ONLY — no cross-location bleed
+ * 2. Conveyors cascade from plant + shift + locationId
+ * 3. Total Target reads session.demandPerShift (correct field)
+ * 4. Achievement % = (totalProduction / totalTarget) × 100, shows "—" when no target
+ * 5. Navbar + KPI bar both sticky (navbar top:0, KPI bar top:56px)
+ * 6. All sessions shown in timeline table
+ * 7. Real-time clock anchored to serverTime with local drift correction
+ * 8. One poll every 10 seconds — inFlight guard prevents overlap
+ */
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import axiosInstance from "../api/axiosInstance";
 import dayjs from "dayjs";
+import { Select, Button, Tag, Spin, Empty, Tooltip, Table, Alert, Progress } from "antd";
 import {
-  Select, Button, Tag, Table, Progress, Tooltip,
-  Empty, Spin, Alert, Divider, Badge, Space, Row, Col,
-} from "antd";
-import {
-  Activity, MapPin, Factory, Layers3, Clock, Clock3, Timer, RefreshCw,
-  Lock, AlertTriangle, CheckCircle2, Coffee, Play, Package, Target,
-  TrendingUp, Gauge, Zap, ChevronRight, ShieldCheck, Users2,
+  Activity, MapPin, Clock3, ChevronRight, ArrowLeft,
+  RefreshCw, Radio, Lock, AlertTriangle, WifiOff, RotateCcw,
+  Package, Target, Award, Timer, TrendingDown, Gauge, CheckCircle2,
+  Zap, Coffee, Layers, Play, XCircle, Sun, Moon, Sigma, Cpu,
+  BarChart2,
 } from "lucide-react";
 
-const API = axiosInstance;
+/* ─────────────────────────────────────────────────────────── */
+const API     = axiosInstance;
+const POLL_MS = 10_000;
 
-/* ══════════════════════════════════════════════════════════
-   ROLE HANDLING
-══════════════════════════════════════════════════════════ */
-const ROLE = { SUPER_ADMIN: "superAdmin", PLANT_ADMIN: "plantAdmin", MANAGER: "manager" };
+/* ─────────────────────────────────────────────────────────── */
+/*  PURE HELPERS                                               */
+/* ─────────────────────────────────────────────────────────── */
+const safeNum = (v, fb = 0) => { const n = Number(v); return Number.isFinite(n) ? n : fb; };
+const fmt1    = (n) => safeNum(n).toFixed(1);
+const fmt0    = (n) => Math.round(safeNum(n)).toLocaleString();
+const pct     = (a, b) => (safeNum(b) > 0 ? Math.round((safeNum(a) / safeNum(b)) * 10000) / 100 : null);
 
-const normalizeRole = (role) => {
-  const r = String(role || "").toLowerCase().replace(/[_\s]/g, "");
-  if (r === "superadmin") return ROLE.SUPER_ADMIN;
-  if (r === "plantadmin") return ROLE.PLANT_ADMIN;
-  if (r === "manager") return ROLE.MANAGER;
-  return null;
+const formatHM = (mins) => {
+  const m = Math.max(Math.round(safeNum(mins)), 0);
+  if (m === 0) return "0m";
+  const h = Math.floor(m / 60), r = m % 60;
+  return h === 0 ? `${r}m` : `${h}h ${String(r).padStart(2, "0")}m`;
 };
 
-const ROLE_LABEL = {
-  [ROLE.SUPER_ADMIN]: "Super Admin",
-  [ROLE.PLANT_ADMIN]: "Plant Admin",
-  [ROLE.MANAGER]: "Manager",
+const fmtClock = (v) => v ? dayjs(v).format("HH:mm:ss") : "—";
+const fmtHHMM  = (v) => v ? dayjs(v).format("HH:mm")    : "—";
+
+/* Is HH:mm shift window currently active? */
+const shiftNow = (s) => {
+  if (!s?.shiftStartTime || !s?.shiftEndTime) return false;
+  const nowM = dayjs().hour() * 60 + dayjs().minute();
+  const [sh, sm] = s.shiftStartTime.split(":").map(Number);
+  const [eh, em] = s.shiftEndTime.split(":").map(Number);
+  let sMin = sh * 60 + sm, eMin = eh * 60 + em;
+  if (eMin <= sMin) eMin += 1440;
+  const nm = nowM < sMin ? nowM + 1440 : nowM;
+  return nm >= sMin && nm < eMin;
 };
 
-const resolveId = (val) => (val && typeof val === "object" ? val._id : val);
-
-/* ══════════════════════════════════════════════════════════
-   TIME HELPERS — mirrors UserProductionPage's activeShift logic exactly.
-══════════════════════════════════════════════════════════ */
-const parseHM = (t) => {
-  if (!t || typeof t !== "string" || !t.includes(":")) return [0, 0];
-  const [h, m] = t.split(":").map(Number);
-  return [h || 0, m || 0];
+/* Achievement colour */
+const achv = (p) => {
+  if (p === null || p === undefined) return { hex: "#94a3b8", antd: "default", bg: "#f8fafc", border: "#e2e8f0" };
+  const n = safeNum(p);
+  if (n >= 90) return { hex: "#16a34a", antd: "green",  bg: "#f0fdf4", border: "#bbf7d0" };
+  if (n >= 70) return { hex: "#d97706", antd: "gold",   bg: "#fffbeb", border: "#fde68a" };
+  return              { hex: "#dc2626", antd: "red",    bg: "#fef2f2", border: "#fecaca" };
 };
 
-const findCurrentShift = (shiftList, now) => {
-  if (!shiftList?.length) return null;
-  const nowMin = now.hour() * 60 + now.minute();
-  return shiftList.find((s) => {
-    const [sh, sm] = parseHM(s.shiftStartTime);
-    const [eh, em] = parseHM(s.shiftEndTime);
-    let startMin = sh * 60 + sm;
-    let endMin = eh * 60 + em;
-    if (endMin <= startMin) endMin += 1440; // overnight
-    const nm = nowMin < startMin ? nowMin + 1440 : nowMin;
-    return nm >= startMin && nm < endMin;
-  }) || null;
-};
+/* ─────────────────────────────────────────────────────────── */
+/*  STYLE TOKENS                                               */
+/* ─────────────────────────────────────────────────────────── */
+const CARD  = "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden";
+const LABEL = "block text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5";
+const FIELD = "bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-[11px] text-slate-700 font-semibold";
 
-const fmtNum = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.round(n).toLocaleString() : "0";
-};
-const fmtPct = (v) => {
-  const n = Number(v);
-  return `${Number.isFinite(n) ? n.toFixed(1).replace(/\.0$/, "") : "0"}%`;
-};
-const fmtMinutes = (mins) => {
-  const m = Math.max(Math.round(Number(mins) || 0), 0);
-  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
-};
-const fmtTime = (val) => (val ? dayjs(val).format("HH:mm") : "—");
-
-const achvTone = (pct) => {
-  const n = Number(pct);
-  if (!Number.isFinite(n)) return "slate";
-  return n >= 100 ? "green" : n >= 70 ? "amber" : "red";
-};
-
-const SHIFT_STATUS_META = {
-  "Not Started": { color: "default", icon: Clock, label: "Not Started", tone: "slate" },
-  Running: { color: "green", icon: Play, label: "Running", tone: "green" },
-  Break: { color: "gold", icon: Coffee, label: "Break", tone: "amber" },
-  Completed: { color: "default", icon: CheckCircle2, label: "Completed", tone: "slate" },
-};
-
-/* ══════════════════════════════════════════════════════════
-   SHARED UI TOKENS
-══════════════════════════════════════════════════════════ */
-const CARD = "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden";
-
-const TONE = {
-  blue:   { bg: "bg-blue-50",   border: "border-blue-200",   text: "text-blue-700",   chip: "bg-blue-100" },
-  teal:   { bg: "bg-teal-50",   border: "border-teal-200",   text: "text-teal-700",   chip: "bg-teal-100" },
-  amber:  { bg: "bg-amber-50",  border: "border-amber-200",  text: "text-amber-700",  chip: "bg-amber-100" },
-  cyan:   { bg: "bg-cyan-50",   border: "border-cyan-200",   text: "text-cyan-700",   chip: "bg-cyan-100" },
-  green:  { bg: "bg-green-50",  border: "border-green-200",  text: "text-green-700",  chip: "bg-green-100" },
-  purple: { bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-700", chip: "bg-purple-100" },
-  red:    { bg: "bg-red-50",    border: "border-red-200",    text: "text-red-700",    chip: "bg-red-100" },
-  slate:  { bg: "bg-slate-50",  border: "border-slate-200",  text: "text-slate-700",  chip: "bg-slate-100" },
-};
-
-const SectionHead = ({ icon: Icon, color = "text-teal-600", border = "#0d9488", children, extra }) => (
+/* ─────────────────────────────────────────────────────────── */
+/*  ATOMS                                                      */
+/* ─────────────────────────────────────────────────────────── */
+const SHead = ({ icon: I, color = "text-teal-600", border = "#0d9488", children, extra }) => (
   <div className="flex items-center justify-between w-full">
-    <div className="flex items-center gap-1.5" style={{ borderLeft: `2px solid ${border}`, paddingLeft: 8 }}>
-      <Icon size={13} className={color} />
-      <h2 className="text-[13px] font-bold text-slate-800 m-0 tracking-wide">{children}</h2>
+    <div className="flex items-center gap-2" style={{ borderLeft: `3px solid ${border}`, paddingLeft: 8 }}>
+      <I size={12} className={color} />
+      <span className="text-[11px] font-black text-slate-800 tracking-wide">{children}</span>
     </div>
     {extra}
   </div>
 );
 
-const FullPageSpin = ({ label }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/10 backdrop-blur-md">
-    <div className="flex flex-col items-center gap-4 bg-white/80 backdrop-blur-2xl border border-white shadow-2xl shadow-slate-900/10 rounded-2xl px-10 py-8">
-      <Spin size="large" />
-      <span className="text-slate-500 text-sm font-medium tracking-wide">{label}</span>
+const SPill = ({ status }) => {
+  const M = {
+    Running:     "bg-green-50 border-green-200 text-green-700",
+    Break:       "bg-amber-50 border-amber-200 text-amber-700",
+    "Not Started": "bg-slate-50 border-slate-200 text-slate-500",
+    Completed:   "bg-blue-50 border-blue-200 text-blue-700",
+  };
+  const dot = {
+    Running: "bg-green-500 animate-pulse", Break: "bg-amber-400 animate-pulse",
+    "Not Started": "bg-slate-400", Completed: "bg-blue-500",
+  };
+  const s = status || "Not Started";
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold ${M[s] || M["Not Started"]}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${dot[s] || dot["Not Started"]}`} />
+      {s}
+    </span>
+  );
+};
+
+/* KPI card — gradient tone */
+const KCard = ({ icon: I, label, value, sub, tone = "slate", pulse, warn }) => {
+  const T = {
+    blue:   { g: "from-blue-50 to-blue-100/40",     b: "border-blue-200",   v: "text-blue-900",   i: "text-blue-400",   arc: "#3b82f6" },
+    teal:   { g: "from-teal-50 to-teal-100/40",     b: "border-teal-200",   v: "text-teal-900",   i: "text-teal-400",   arc: "#0d9488" },
+    green:  { g: "from-green-50 to-green-100/40",   b: "border-green-200",  v: "text-green-900",  i: "text-green-400",  arc: "#16a34a" },
+    red:    { g: "from-red-50 to-red-100/40",       b: "border-red-200",    v: "text-red-800",    i: "text-red-400",    arc: "#dc2626" },
+    amber:  { g: "from-amber-50 to-amber-100/40",   b: "border-amber-200",  v: "text-amber-900",  i: "text-amber-400",  arc: "#f59e0b" },
+    purple: { g: "from-purple-50 to-purple-100/40", b: "border-purple-200", v: "text-purple-900", i: "text-purple-400", arc: "#7c3aed" },
+    cyan:   { g: "from-cyan-50 to-cyan-100/40",     b: "border-cyan-200",   v: "text-cyan-900",   i: "text-cyan-400",   arc: "#0891b2" },
+    indigo: { g: "from-indigo-50 to-indigo-100/40", b: "border-indigo-200", v: "text-indigo-900", i: "text-indigo-400", arc: "#4f46e5" },
+    slate:  { g: "from-slate-50 to-slate-100/40",   b: "border-slate-200",  v: "text-slate-700",  i: "text-slate-400",  arc: "#64748b" },
+  };
+  const t = T[tone] || T.slate;
+  return (
+    <div className={`rounded-2xl border bg-gradient-to-br ${t.g} ${t.b} px-3 py-2.5 flex flex-col gap-1 relative overflow-hidden`}
+      style={{ boxShadow: "0 1px 3px rgba(15,23,42,0.05)" }}>
+      <div className="absolute -top-3 -right-3 w-12 h-12 rounded-full opacity-10" style={{ background: t.arc }} />
+      <div className="flex items-center justify-between">
+        <I size={12} className={t.i} />
+        {pulse && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
+        {warn  && !pulse && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+      </div>
+      <div className={`text-[15px] font-black tabular-nums leading-none ${t.v}`}>{value}</div>
+      <div className="text-[8px] font-bold uppercase tracking-widest text-slate-400">{label}</div>
+      {sub && <div className="text-[8px] text-slate-300 leading-none">{sub}</div>}
     </div>
-  </div>
-);
+  );
+};
 
-const FieldLabel = ({ icon: Icon, children }) => (
-  <div className="flex items-center gap-1 mb-1">
-    {Icon && <Icon size={10} className="text-slate-400" />}
-    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{children}</span>
-  </div>
-);
-
-const SelectField = ({ icon, label, hint, ...props }) => (
+const LockedField = ({ label, value }) => (
   <div>
-    <FieldLabel icon={icon}>{label}</FieldLabel>
-    <Select className="w-full" {...props} />
-    {hint}
-  </div>
-);
-
-const LockedField = ({ icon, label, value }) => (
-  <div>
-    <FieldLabel icon={icon}>{label}</FieldLabel>
-    <Tooltip title="Locked — assigned to your role">
-      <div className="h-8 rounded-lg border border-slate-200 bg-slate-100 px-2.5 flex items-center justify-between">
-        <span className="text-[12px] font-semibold text-slate-600 truncate">{value || "—"}</span>
-        <Lock size={11} className="text-slate-400 flex-shrink-0 ml-1.5" />
+    <label className={LABEL}>{label}</label>
+    <Tooltip title="Locked to your assigned scope">
+      <div className={`${FIELD} flex items-center gap-1.5 cursor-not-allowed opacity-70`}>
+        <Lock size={8} className="text-slate-300 flex-shrink-0" />
+        <span className="truncate text-slate-500">{value || "—"}</span>
       </div>
     </Tooltip>
   </div>
 );
 
-const ShiftStatusTag = ({ status, light }) => {
-  const meta = SHIFT_STATUS_META[status] || SHIFT_STATUS_META["Not Started"];
-  const Icon = meta.icon;
-  if (light) {
-    return (
-      <span className="inline-flex items-center gap-1.5 bg-white/15 border border-white/25 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg">
-        <Icon size={11} /> {meta.label}
-      </span>
-    );
-  }
-  return (
-    <Tag color={meta.color} className="!rounded-lg !font-bold !text-[11px]">
-      <Icon size={11} className="inline -mt-0.5 mr-1" />{meta.label}
-    </Tag>
-  );
-};
-
-const RoleBadge = ({ role }) => (
-  <span className="inline-flex items-center gap-1.5 bg-teal-50 border border-teal-200 text-teal-700 text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wide">
-    <ShieldCheck size={11} /> {ROLE_LABEL[role] || role}
-  </span>
+const SRow = ({ label, children }) => (
+  <div className="flex items-center justify-between py-1.5 border-b border-slate-50 last:border-0">
+    <span className="text-[10px] text-slate-400">{label}</span>
+    <div>{children}</div>
+  </div>
 );
 
-/* Tone-coded KPI tile — matches UserProductionPage's KpiCard language. */
-const KpiTile = ({ icon: Icon, label, value, tone = "slate", progress }) => {
-  const t = TONE[tone];
+const BigN = ({ label, value, tone = "slate" }) => {
+  const C = {
+    blue:   "border-blue-200 bg-blue-50 text-blue-900",
+    teal:   "border-teal-200 bg-teal-50 text-teal-900",
+    slate:  "border-slate-200 bg-slate-50 text-slate-800",
+    red:    "border-red-200 bg-red-50 text-red-800",
+    green:  "border-green-200 bg-green-50 text-green-900",
+    amber:  "border-amber-200 bg-amber-50 text-amber-900",
+    purple: "border-purple-200 bg-purple-50 text-purple-900",
+  };
   return (
-    <div className={`rounded-xl border p-3 shadow-sm flex flex-col gap-1.5 w-full h-full ${t.bg} ${t.border} ${t.text}`}>
-      <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${t.chip}`}>
-        <Icon size={14} />
-      </div>
-      <div className="text-xl font-extrabold leading-none mt-0.5 tabular-nums truncate">{value}</div>
-      <div className="text-[9px] font-bold opacity-70 uppercase tracking-wider">{label}</div>
-      {typeof progress === "number" && (
-        <div className="w-full h-1 rounded-full bg-white/60 overflow-hidden mt-0.5">
-          <div
-            className="h-full rounded-full transition-all"
-            style={{ width: `${Math.min(Math.max(progress, 0), 100)}%`, backgroundColor: "currentColor" }}
-          />
-        </div>
-      )}
+    <div className={`rounded-xl border p-2 text-center ${C[tone] || C.slate}`}>
+      <div className="text-[8px] font-bold uppercase tracking-widest opacity-40 mb-1">{label}</div>
+      <div className="text-[20px] font-black tabular-nums leading-none">{value}</div>
     </div>
   );
 };
 
-/* Tone-coded stat box used inside Current Block / Current Session cards */
-const StatBox = ({ label, value, tone = "slate", full }) => {
-  const t = TONE[tone];
-  return (
-    <div className={full ? "col-span-full" : ""}>
-      <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-1">{label}</div>
-      <div className={`rounded-lg border px-2.5 py-1.5 text-[12px] font-bold truncate ${t.bg} ${t.border} ${t.text}`}>
-        {value ?? "—"}
-      </div>
-    </div>
-  );
-};
-
-/* ══════════════════════════════════════════════════════════
-   MAIN PAGE
-══════════════════════════════════════════════════════════ */
+/* ─────────────────────────────────────────────────────────── */
+/*  MAIN PAGE                                                  */
+/* ─────────────────────────────────────────────────────────── */
 export default function LiveAnalysisPage() {
-  const { user, loading: authLoading } = useAuth();
-  const role = normalizeRole(user?.role);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const role     = user?.role;
 
-  /* ── 1s clock, corrected against backend serverTime once we have it ── */
-  const [now, setNow] = useState(dayjs());
-  const [serverOffsetMs, setServerOffsetMs] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setNow(dayjs()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  const syncedNow = useMemo(() => now.add(serverOffsetMs, "millisecond"), [now, serverOffsetMs]);
-
-  /* ── org master data ── */
+  /* ── scope dropdowns ── */
   const [locations, setLocations] = useState([]);
-  const [plants, setPlants] = useState([]);
-  const [masterLoading, setMasterLoading] = useState(true);
-  const [masterError, setMasterError] = useState(null);
+  const [plants,    setPlants]    = useState([]);
+  const [shifts,    setShifts]    = useState([]);
+  const [conveyors, setConveyors] = useState([]);
 
-  const loadMasterData = useCallback(async () => {
-    setMasterLoading(true);
-    setMasterError(null);
-    try {
-      const [locRes, plantRes] = await Promise.all([API.get("/locations"), API.get("/plants")]);
-      setLocations(locRes.data?.locations || locRes.data?.data || []);
-      setPlants(plantRes.data?.plants || plantRes.data?.data || []);
-    } catch (err) {
-      setMasterError(err?.response?.data?.message || "Unable to load organization data.");
-    } finally {
-      setMasterLoading(false);
-    }
+  const [selLoc, setSelLoc] = useState(null);
+  const [selPlt, setSelPlt] = useState(null);
+  const [selSft, setSelSft] = useState(null);
+  const [selCnv, setSelCnv] = useState(null);
+
+  const [ldLoc, setLdLoc] = useState(false);
+  const [ldPlt, setLdPlt] = useState(false);
+  const [ldSft, setLdSft] = useState(false);
+  const [ldCnv, setLdCnv] = useState(false);
+
+  /* ── live data ── */
+  const [data,        setData]        = useState(null);
+  const [loading,     setLoading]     = useState(false);
+  const [firstLoad,   setFirstLoad]   = useState(true);
+  const [error,       setError]       = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  const pollRef  = useRef(null);
+  const inFlight = useRef(false);
+
+  /* 1-second ticker for live clock */
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
   }, []);
 
+  /* ── PRE-FILL FROM USER RECORD ── */
   useEffect(() => {
-    if (authLoading || !user) return;
-    loadMasterData();
-  }, [authLoading, user?._id, loadMasterData]);
+    if (!user) return;
+    const pid = user.plantId?._id    || user.plantId    || null;
+    const lid = user.locationId?._id || user.locationId || null;
+    if (role === "manager")    { if (pid) setSelPlt(String(pid)); if (lid) setSelLoc(String(lid)); }
+    if (role === "plantAdmin") { if (lid) setSelLoc(String(lid)); }
+  }, [user, role]);
 
-  /* ── selection state (only what each role is actually allowed to change) ── */
-  const [locationId, setLocationId] = useState(null);
-  const [plantId, setPlantId] = useState(null);
-  const [shiftId, setShiftId] = useState(null);
-  const [conveyorId, setConveyorId] = useState(null);
-
-  const userLocationId = resolveId(user?.locationId);
-  const userPlantId = resolveId(user?.plantId);
-
-  const assignedPlant = useMemo(() => {
-    if (role !== ROLE.MANAGER || !userPlantId) return null;
-    return plants.find((p) => p._id === userPlantId) || null;
-  }, [role, userPlantId, plants]);
-  const assignedLocationIdForManager = assignedPlant ? resolveId(assignedPlant.locationId) : null;
-
-  // Effective scope per role — this is the single source of truth used to
-  // build query params, so a role can never accidentally query outside its
-  // own authorized scope, matching resolveRoleAwareLiveScope on the backend.
-  const effectiveLocationId =
-    role === ROLE.SUPER_ADMIN ? locationId
-    : role === ROLE.PLANT_ADMIN ? userLocationId
-    : role === ROLE.MANAGER ? assignedLocationIdForManager
-    : null;
-
-  const effectivePlantId =
-    role === ROLE.SUPER_ADMIN ? plantId
-    : role === ROLE.PLANT_ADMIN ? plantId
-    : role === ROLE.MANAGER ? userPlantId
-    : null;
-
-  const lockedLocationName = useMemo(() => {
-    if (role === ROLE.PLANT_ADMIN) return locations.find((l) => l._id === userLocationId)?.locationName || "—";
-    if (role === ROLE.MANAGER) {
-      return locations.find((l) => l._id === assignedLocationIdForManager)?.locationName
-        || assignedPlant?.locationName || "—";
-    }
-    return null;
-  }, [role, locations, userLocationId, assignedLocationIdForManager, assignedPlant]);
-
-  const plantOptions = useMemo(() => {
-    if (role === ROLE.SUPER_ADMIN) {
-      if (!locationId) return [];
-      return plants.filter((p) => resolveId(p.locationId) === locationId && p.status !== "Inactive");
-    }
-    if (role === ROLE.PLANT_ADMIN) {
-      return plants.filter((p) => resolveId(p.locationId) === userLocationId && p.status !== "Inactive");
-    }
-    return [];
-  }, [role, plants, locationId, userLocationId]);
-
-  const selectedPlantObj = useMemo(
-    () => plants.find((p) => p._id === effectivePlantId) || null,
-    [plants, effectivePlantId]
-  );
-
-  const conveyorOptions = useMemo(
-    () => (selectedPlantObj?.conveyors || []).filter((c) => c.status === "Active"),
-    [selectedPlantObj]
-  );
-
-  /* ── cascading clears — parent change always wipes dependent children ── */
-  const handleLocationChange = (v) => {
-    setLocationId(v); setPlantId(null); setShiftId(null); setConveyorId(null);
-    setShifts([]);
-  };
-  const handlePlantChange = (v) => {
-    setPlantId(v); setShiftId(null); setConveyorId(null);
-    setShifts([]);
-  };
-  const handleShiftChange = (v) => { setShiftId(v); setConveyorId(null); };
-  const handleConveyorChange = (v) => setConveyorId(v || null);
-
-  /* ── shifts for the effective plant ── */
-  const [shifts, setShifts] = useState([]);
-  const [shiftsLoading, setShiftsLoading] = useState(false);
-  const [shiftsError, setShiftsError] = useState(null);
-
-  const loadShiftsForPlant = useCallback(async (pid) => {
-    if (!pid) { setShifts([]); return; }
-    setShiftsLoading(true);
-    setShiftsError(null);
-    try {
-      const { data } = await API.get(`/shifts/plant/${pid}`);
-      setShifts((data?.data || []).filter((s) => s.status !== "Inactive"));
-    } catch (err) {
-      setShiftsError(err?.response?.data?.message || "Unable to load shifts for this plant.");
-      setShifts([]);
-    } finally {
-      setShiftsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadShiftsForPlant(effectivePlantId); }, [effectivePlantId, loadShiftsForPlant]);
-
-  /* ── auto-select current shift once, don't fight a manual pick ── */
+  /* ── FETCH LOCATIONS (superAdmin) ── */
   useEffect(() => {
-    if (!shifts.length || shiftId) return;
-    const current = findCurrentShift(shifts, now);
-    if (current) setShiftId(current._id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shifts]);
+    if (role !== "superAdmin") return;
+    setLdLoc(true);
+    API.get("/locations")
+      .then(({ data: d }) => setLocations(d?.locations || d?.data || []))
+      .catch(() => setLocations([]))
+      .finally(() => setLdLoc(false));
+  }, [role]);
 
-  const currentShiftId = useMemo(() => findCurrentShift(shifts, now)?._id || null, [shifts, now]);
+    /* ── FETCH PLANTS — filtered by locationId ── */
+    useEffect(() => {
+      if (!selLoc && role === "superAdmin") { setPlants([]); setSelPlt(null); return; }
+      setLdPlt(true);
+      API.get("/plants", { params: selLoc ? { locationId: selLoc } : {} })
+        .then(({ data: d }) => {
+          const list = d?.plants || d?.data || [];
+          const filtered = selLoc
+            ? list.filter((p) => String(p.locationId?._id || p.locationId || "") === String(selLoc))
+            : list;
+          setPlants(filtered.filter((p) => p.status !== "Inactive"));
+        })
+        .catch(() => setPlants([]))
+        .finally(() => setLdPlt(false));
+    }, [selLoc, role]);
 
-  /* ── live analysis scope readiness + query params (mirrors backend exactly) ── */
-  const canFetchLive = useMemo(() => {
-    if (role === ROLE.SUPER_ADMIN) return !!(effectiveLocationId && effectivePlantId && shiftId);
-    if (role === ROLE.PLANT_ADMIN) return !!(effectivePlantId && shiftId);
-    if (role === ROLE.MANAGER) return !!shiftId;
-    return false;
-  }, [role, effectiveLocationId, effectivePlantId, shiftId]);
+    /* ── FETCH SHIFTS — for selected plant ── */
+    useEffect(() => {
+      if (!selPlt) { setShifts([]); setSelSft(null); return; }
+      setLdSft(true);
+      API.get(`/shifts/plant/${selPlt}`)
+        .then(({ data: d }) => {
+          const list = (d?.data || d?.shifts || []).filter((s) => s.status !== "Inactive");
+          setShifts(list);
+          const active = list.find(shiftNow);
+          setSelSft(active ? String(active._id) : list[0] ? String(list[0]._id) : null);
+        })
+        .catch(() => setShifts([]))
+        .finally(() => setLdSft(false));
+    }, [selPlt]);
 
-  const liveParams = useMemo(() => {
-    if (!canFetchLive) return null;
-    const p = { shiftId };
-    if (role === ROLE.SUPER_ADMIN) { p.locationId = effectiveLocationId; p.plantId = effectivePlantId; }
-    if (role === ROLE.PLANT_ADMIN) { p.plantId = effectivePlantId; }
-    // Manager sends neither locationId nor plantId — backend derives both
-    // from the authenticated user, exactly as resolveRoleAwareLiveScope does.
-    if (conveyorId) p.conveyorId = conveyorId;
+    /* ── FETCH CONVEYORS — scoped to selected plant & shift, with deduplication ── */
+    useEffect(() => {
+      if (!selPlt || !selSft) { setConveyors([]); setSelCnv(null); return; }
+      setLdCnv(true);
+
+      // Fetch active conveyor strengths for this specific shift
+      API.get(`/conveyor-strength/shift/${selSft}`)
+        .then(({ data: d }) => {
+          const list = d?.data || d?.conveyorStrengths || [];
+          // Deduplicate by conveyor name and ID so Line 1 appears only once
+          const seenNames = new Set();
+          const seenIds = new Set();
+          const unique = [];
+
+          list.forEach((c) => {
+            const name = String(c.conveyorName || "").trim();
+            const id = String(c.conveyorId?._id || c.conveyorId || c._id);
+            if (c.status !== "Inactive" && (!seenNames.has(name) && !seenIds.has(id))) {
+              seenNames.add(name);
+              seenIds.add(id);
+              unique.push(c);
+            }
+          });
+
+          // Fallback to plant's physical conveyors if none configured in ConveyorStrength
+          if (unique.length === 0) {
+            const selectedPlant = plants.find((p) => String(p._id) === String(selPlt));
+            const plantConveyors = (selectedPlant?.conveyors || [])
+              .filter((c) => c.status === "Active")
+              .map((c) => ({ _id: c._id, conveyorId: c._id, conveyorName: c.conveyorName }));
+            setConveyors(plantConveyors);
+          } else {
+            setConveyors(unique);
+          }
+        })
+        .catch(() => {
+          const selectedPlant = plants.find((p) => String(p._id) === String(selPlt));
+          setConveyors((selectedPlant?.conveyors || []).filter((c) => c.status === "Active"));
+        })
+        .finally(() => setLdCnv(false));
+    }, [selPlt, selSft, plants]);
+    
+      /* ── AUTO-RESET & SWITCH ON SHIFT FINISH ── */
+    useEffect(() => {
+      if (!shifts.length) return;
+      const currentActive = shifts.find(shiftNow);
+      const activeId = currentActive ? String(currentActive._id) : null;
+
+      // When the currently viewed shift ends and a new shift becomes active
+      if (activeId && selSft && activeId !== selSft) {
+        setSelSft(activeId);
+        setSelCnv(null);
+        setData(null);
+        setFirstLoad(true);
+      }
+    }, [tick, shifts, selSft]);
+  /* ── SCOPE READY ── */
+  const scopeReady = useMemo(() => {
+    if (!selSft) return false;
+    if (role === "superAdmin" && (!selLoc || !selPlt)) return false;
+    if (role === "plantAdmin" && !selPlt) return false;
+    return true;
+  }, [selSft, selLoc, selPlt, role]);
+
+  /* ── BUILD PARAMS ── */
+  const buildParams = useCallback(() => {
+    const p = { shiftId: selSft, date: dayjs().format("YYYY-MM-DD") };
+    if (role === "superAdmin" || role === "plantAdmin") p.plantId    = selPlt;
+    if (role === "superAdmin")                          p.locationId = selLoc;
+    if (selCnv)                                         p.conveyorId = selCnv;
     return p;
-  }, [canFetchLive, role, effectiveLocationId, effectivePlantId, shiftId, conveyorId]);
-  const liveParamsKey = liveParams ? JSON.stringify(liveParams) : null;
+  }, [selSft, selPlt, selLoc, selCnv, role]);
 
-  /* ── live analysis fetch + exactly-10s polling, no overlap ── */
-  const [liveData, setLiveData] = useState(null);
-  const [liveLoading, setLiveLoading] = useState(false);
-  const [liveRefreshing, setLiveRefreshing] = useState(false);
-  const [liveError, setLiveError] = useState(null);
-  const pollRef = useRef(null);
-  const fetchingRef = useRef(false);
-
-  const fetchLive = useCallback(async ({ background } = {}) => {
-    if (!liveParams || fetchingRef.current) return;
-    fetchingRef.current = true;
-    if (background) setLiveRefreshing(true); else setLiveLoading(true);
-    setLiveError(null);
+  /* ── FETCH LIVE ANALYSIS ── */
+  const fetchLive = useCallback(async (bg = false) => {
+    if (!scopeReady || inFlight.current) return;
+    inFlight.current = true;
+    if (!bg) setLoading(true);
+    setError(null);
     try {
-      const { data } = await API.get("/live-analysis", { params: liveParams });
-      setLiveData(data?.data || null);
-      if (data?.data?.serverTime) setServerOffsetMs(new Date(data.data.serverTime).getTime() - Date.now());
+      const { data: d } = await API.get("/live-analysis", { params: buildParams() });
+      setData(d?.data || d);
+      setLastUpdated(new Date());
+      if (firstLoad) setFirstLoad(false);
     } catch (err) {
-      setLiveError(err?.response?.data?.message || "Unable to load Live Analysis data.");
+      setError(err?.response?.data?.message || "Unable to load Live Analysis. Check your scope and retry.");
     } finally {
-      fetchingRef.current = false;
-      if (background) setLiveRefreshing(false); else setLiveLoading(false);
+      inFlight.current = false;
+      if (!bg) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveParamsKey]);
+  }, [scopeReady, buildParams, firstLoad]);
+
+  /* ── POLLING ── */
+  const startPoll = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => fetchLive(true), POLL_MS);
+  }, [fetchLive]);
 
   useEffect(() => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    if (!liveParamsKey) { setLiveData(null); return; }
-
-    setLiveData(null); // new scope — drop stale data, show initial spinner
-    fetchLive({ background: false });
-
-    pollRef.current = setInterval(() => fetchLive({ background: true }), 10000);
-    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+    if (!scopeReady) { if (pollRef.current) clearInterval(pollRef.current); return; }
+    setData(null); setFirstLoad(true);
+    fetchLive(false).then(() => startPoll());
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveParamsKey]);
+  }, [scopeReady, selSft, selCnv]);
 
-  /* ── shift timer, corrected against serverTime ── */
-  const shiftInfo = liveData?.shift;
-  const totalShiftMin = shiftInfo?.totalShiftMinutes || 0;
-  let elapsedMin = 0, remainingMin = 0;
-  if (shiftInfo?.shiftStartTime && shiftInfo?.shiftEndTime) {
-    if (shiftInfo.status === "Not Started") { elapsedMin = 0; remainingMin = totalShiftMin; }
-    else if (shiftInfo.status === "Completed") { elapsedMin = totalShiftMin; remainingMin = 0; }
-    else {
-      elapsedMin = Math.max(syncedNow.diff(dayjs(shiftInfo.shiftStartTime), "minute"), 0);
-      remainingMin = Math.max(dayjs(shiftInfo.shiftEndTime).diff(syncedNow, "minute"), 0);
-    }
-  }
-  const shiftProgressPct = totalShiftMin > 0 ? Math.min(100, Math.round((elapsedMin / totalShiftMin) * 100)) : 0;
-  const shiftMeta = SHIFT_STATUS_META[shiftInfo?.status] || SHIFT_STATUS_META["Not Started"];
-  const shiftToneBg = { green: "bg-green-50 border-green-200", amber: "bg-amber-50 border-amber-200", slate: "bg-slate-50 border-slate-200" }[shiftMeta.tone];
-  const shiftProgressColor = { green: "#16a34a", amber: "#d97706", slate: "#94a3b8" }[shiftMeta.tone];
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  /* ── current block elapsed/remaining, corrected against serverTime ── */
-  let blockElapsedMin = 0, blockRemainingMin = 0;
-  if (liveData?.currentBlock?.startTime && liveData?.currentBlock?.endTime) {
-    blockElapsedMin = Math.max(syncedNow.diff(dayjs(liveData.currentBlock.startTime), "minute"), 0);
-    blockRemainingMin = Math.max(dayjs(liveData.currentBlock.endTime).diff(syncedNow, "minute"), 0);
-  }
+  /* ── FILTER HANDLERS — strict cascade reset ── */
+    const onLoc = (v) => {
+      setSelLoc(v);
+      setSelPlt(null);
+      setSelSft(null);
+      setSelCnv(null);
+      setPlants([]);
+      setShifts([]);
+      setConveyors([]);
+      setData(null);
+    };
 
-  /* ── multiple concurrent LIVE sessions — surfaced, never hidden/filtered ── */
-  const liveSessionCount = useMemo(
-    () => (liveData?.timeline || []).filter((r) => r.isRunning).length,
-    [liveData]
-  );
+    const onPlt = (v) => {
+      setSelPlt(v);
+      setSelSft(null);
+      setSelCnv(null);
+      setShifts([]);
+      setConveyors([]);
+      setData(null);
+    };
 
-  /* ── breadcrumb pills ── */
-  const breadcrumbParts = useMemo(() => {
-    const locName = liveData?.scope?.locationName || locations.find((l) => l._id === effectiveLocationId)?.locationName || lockedLocationName;
-    const plantName = liveData?.scope?.plantName || selectedPlantObj?.plantName;
-    const shiftName = liveData?.scope?.shiftName || shifts.find((s) => s._id === shiftId)?.shiftName;
-    const convName = conveyorOptions.find((c) => c._id === conveyorId)?.conveyorName;
-    return [locName, plantName, shiftName, convName].filter((v) => v && v !== "—");
-  }, [liveData, locations, effectiveLocationId, lockedLocationName, selectedPlantObj, shifts, shiftId, conveyorOptions, conveyorId]);
+    const onSft = (v) => {
+      setSelSft(v);
+      setSelCnv(null);
+      setData(null);
+    };
 
-  /* ── table columns ── */
-  const blockColumns = useMemo(() => [
-    { title: "Block", dataIndex: "blockLabel", key: "block",
-      render: (v) => <span className="font-semibold text-slate-700">{v}</span> },
-    { title: "Type", dataIndex: "blockType", key: "type", width: 100,
-      render: (v, r) => <Tag color={r.isBreak ? "gold" : "blue"} className="!rounded-lg !text-[11px]">{r.isBreak ? "BREAK" : v}</Tag> },
-    { title: "Start", dataIndex: "startTime", key: "start", width: 76, align: "center", render: fmtTime },
-    { title: "End", dataIndex: "endTime", key: "end", width: 76, align: "center", render: fmtTime },
-    { title: "Duration", dataIndex: "durationMinutes", key: "dur", width: 90, align: "center",
-      render: (v) => <Tag color="geekblue" className="!rounded-lg !text-[11px]">{fmtMinutes(v)}</Tag> },
-    { title: "Production Qty", dataIndex: "productionQty", key: "qty", width: 110, align: "center",
-      render: (v, r) => r.isBreak ? <span className="text-slate-300">—</span> : <span className="font-bold text-slate-800">{fmtNum(v)}</span> },
-    { title: "Rate/hr", dataIndex: "productionRatePerHour", key: "rate", width: 90, align: "center",
-      render: (v, r) => r.isBreak ? <span className="text-slate-300">—</span> : fmtNum(v) },
-    { title: "Status", key: "status", width: 100, align: "center",
-      render: (_, r) => {
-        const rowStart = dayjs(r.startTime).valueOf();
-        const rowEnd = dayjs(r.endTime).valueOf();
-        const curStart = liveData?.currentBlock?.startTime ? dayjs(liveData.currentBlock.startTime).valueOf() : null;
-        if (curStart && rowStart === curStart) return <Tag color="green" className="!rounded-lg !text-[11px]">Live</Tag>;
-        if (syncedNow.valueOf() >= rowEnd) return <Tag className="!rounded-lg !text-[11px]">Completed</Tag>;
-        return <Tag color="processing" className="!rounded-lg !text-[11px]">Upcoming</Tag>;
-      } },
-  ], [liveData, syncedNow]);
+    const onCnv = (v) => {
+      setSelCnv(v || null);
+      setData(null);
+    };
 
-  // Session Timeline faithfully renders every row the backend returns —
-  // including multiple concurrent Running sessions. Nothing is filtered
-  // or deduplicated here; see the "N Live" badge on the section header.
-  const timelineColumns = useMemo(() => [
-    { title: "Model", dataIndex: "modelName", key: "model",
-      render: (v, r) => (
-        <span className="flex items-center gap-1.5">
-          <Tag color="cyan" className="!rounded-lg !text-[11px] !font-semibold !m-0">{v}</Tag>
-          {r.isRunning && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />}
-        </span>
+  /* ── DERIVED ── */
+  const raw        = data?.summary         || {};
+  const shift      = data?.shift           || {};
+  const block      = data?.currentBlock    || null;
+  const sess       = data?.currentSession  || null;
+  const allBlocks  = data?.blocks?.all     || [];
+  const upcoming   = data?.blocks?.upcoming || [];
+  const timeline   = data?.timeline        || [];
+  const status     = shift.status          || "Not Started";
+  const perf       = sess?.performance     || {};
+
+  /* Total Target — from session.demandPerShift sum */
+  const totalTarget     = safeNum(raw.totalTarget);
+  const totalProduction = safeNum(raw.totalProduction);
+  const hasTarget       = totalTarget > 0;
+
+  /* Summary achievement */
+  const sumAchvPct = hasTarget ? safeNum(raw.achievementPercent) : null;
+  const sumAchv    = achv(sumAchvPct);
+
+  /* Session achievement */
+  const sessTarget    = safeNum(perf.target);
+  const sessProd      = safeNum(perf.quantity);
+  const sessHasTarget = sessTarget > 0;
+  const sessAchvPct   = sessHasTarget ? pct(sessProd, sessTarget) : null;
+  const sessAchv      = achv(sessAchvPct);
+
+  /* Live elapsed (server-time anchored) */
+  const elapsedMin = useMemo(() => {
+    if (!shift.shiftStartTime) return 0;
+    const start  = dayjs(shift.shiftStartTime);
+    const drift  = lastUpdated ? dayjs().diff(dayjs(lastUpdated), "second") : 0;
+    const now    = data?.serverTime ? dayjs(data.serverTime).add(drift, "second") : dayjs();
+    if (now.isBefore(start)) return 0;
+    if (status === "Completed") return Math.round(dayjs(shift.shiftEndTime).diff(start, "minute"));
+    return Math.max(Math.round(now.diff(start, "minute")), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shift, status, lastUpdated, tick]);
+
+  const remainMin = useMemo(() => {
+    if (!shift.shiftEndTime || status === "Completed") return 0;
+    const drift = lastUpdated ? dayjs().diff(dayjs(lastUpdated), "second") : 0;
+    const now   = data?.serverTime ? dayjs(data.serverTime).add(drift, "second") : dayjs();
+    return Math.max(Math.round(dayjs(shift.shiftEndTime).diff(now, "minute")), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shift, status, lastUpdated, tick]);
+
+  const shiftPct = shift.totalShiftMinutes
+    ? Math.min(Math.round((elapsedMin / shift.totalShiftMinutes) * 100), 100) : 0;
+
+  /* Locked display names */
+  const uPlant = user?.plantId?.plantName    || user?.plantName    || "—";
+  const uLoc   = user?.locationId?.locationName || user?.locationName || "—";
+
+  /* Conveyor label for breadcrumb */
+  const cnvLabel = useMemo(() => {
+    if (!selCnv) return null;
+    const c = conveyors.find((c) => String(c.conveyorId?._id || c.conveyorId || c._id) === selCnv);
+    return c?.conveyorName || "Conveyor";
+  }, [selCnv, conveyors]);
+
+  /* KPI achievement tone */
+  const achvTone = (p) => p === null ? "slate" : p >= 90 ? "green" : p >= 70 ? "amber" : "red";
+
+    /* ── BLOCK TABLE COLS ── */
+    const blockCols = [
+      { title: "#", key: "n", width: 40,
+        render: (_, r) => <span className="text-[10px] font-black text-slate-300 tabular-nums">{r.blockNumber ?? "—"}</span> },
+      { title: "Block", key: "l",
+        render: (_, r) => (
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${r.isBreak ? "bg-amber-400" : "bg-blue-400"}`} />
+            <span className="text-[11px] font-semibold text-slate-700">{r.blockLabel || "—"}</span>
+          </div>
+        ) },
+      { title: "Type", key: "t", width: 110,
+        render: (_, r) => r.isBreak
+          ? <Tag color="gold"  className="!rounded-lg !text-[10px] !font-bold">☕ Break</Tag>
+          : <Tag color="blue"  className="!rounded-lg !text-[10px] !font-bold">⚡ Production</Tag> },
+      { title: "Start",   key: "s",  width: 70, align: "center",
+        render: (_, r) => <span className="text-[11px] tabular-nums font-mono">{fmtHHMM(r.startTime)}</span> },
+      { title: "End",     key: "e",  width: 70, align: "center",
+        render: (_, r) => <span className="text-[11px] tabular-nums font-mono">{fmtHHMM(r.endTime)}</span> },
+      { title: "Dur",     key: "d",  width: 70, align: "center",
+        render: (_, r) => <span className="text-[11px] text-slate-500">{formatHM(r.durationMinutes)}</span> },
+      { title: "Qty",     key: "q",  width: 70, align: "center",
+        render: (_, r) => !r.isBreak
+          ? <span className="text-[12px] font-black text-slate-800 tabular-nums">{safeNum(r.productionQty)}</span>
+          : <span className="text-slate-200">—</span> },
+      { title: "Target",  key: "tgt", width: 75, align: "center",
+        render: (_, r) => !r.isBreak && safeNum(r.target) > 0
+          ? <span className="text-[11px] font-semibold text-slate-600 tabular-nums">{safeNum(r.target)}</span>
+          : <span className="text-slate-200">—</span> },
+      { title: "Achv %",  key: "achv", width: 80, align: "center",
+        render: (_, r) => {
+          if (r.isBreak) return <span className="text-slate-200">—</span>;
+          const a = safeNum(r.achievementPercent);
+          if (a <= 0 && safeNum(r.productionQty) === 0) return <span className="text-slate-300 text-[10px]">0%</span>;
+          const color = a >= 90 ? "green" : a >= 70 ? "gold" : "red";
+          return <Tag color={color} className="!rounded-md !text-[10px] !font-black">{fmt1(a)}%</Tag>;
+        } },
+      { title: "Rate/hr", key: "r",  width: 84, align: "center",
+        render: (_, r) => !r.isBreak && safeNum(r.productionRatePerHour) > 0
+          ? <span className="text-[11px] font-bold text-teal-700 tabular-nums">{fmt1(r.productionRatePerHour)}</span>
+          : <span className="text-slate-200">—</span> },
+    ];
+
+  /* ── TIMELINE TABLE COLS ── */
+  const tlCols = [
+    { title: "Model", key: "m", ellipsis: true,
+      render: (_, r) => (
+        <div className="flex items-center gap-1.5">
+          {r.isRunning && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />}
+          <Tag color="cyan" className="!rounded-lg !text-[11px] !font-bold !m-0">{r.modelName || "—"}</Tag>
+        </div>
       ) },
-    { title: "Start", dataIndex: "startTime", key: "start", width: 76, align: "center", render: fmtTime },
-    { title: "End", dataIndex: "endTime", key: "end", width: 76, align: "center",
-      render: (v, r) => r.isRunning ? <Tag color="red" className="!rounded-lg !text-[10px]">LIVE</Tag> : fmtTime(v) },
-    { title: "Production Qty", dataIndex: "productionQty", key: "qty", width: 110, align: "center",
-      render: (v) => <span className="font-bold text-slate-800">{fmtNum(v)}</span> },
-    { title: "Running Time", dataIndex: "runningTime", key: "running", width: 100, align: "center" },
-    { title: "Downtime", dataIndex: "downtimeMinutes", key: "downtime", width: 90, align: "center", render: fmtMinutes },
-    { title: "Rate/hr", dataIndex: "averageProductionRate", key: "rate", width: 90, align: "center", render: fmtNum },
-    { title: "Achievement", dataIndex: "achievementPercent", key: "achv", width: 100, align: "center",
-      render: (v) => <Tag color={achvTone(v)} className="!rounded-lg !text-[11px] !font-bold">{fmtPct(v)}</Tag> },
-    { title: "Status", dataIndex: "status", key: "status", width: 100, align: "center",
-      render: (v, r) => {
-        const s = String(v || "").toLowerCase();
-        const color = r.isRunning ? "green" : s === "cancelled" ? "red" : s === "completed" ? "default" : "default";
-        const label = r.isRunning ? "Running" : s === "cancelled" ? "Cancelled" : v || "Completed";
-        return <Tag color={color} className="!rounded-lg !text-[11px] !font-semibold">{label}</Tag>;
+    { title: "Start", key: "st", width: 68, align: "center",
+      render: (_, r) => <span className="text-[11px] tabular-nums font-mono">{fmtHHMM(r.startTime)}</span> },
+    { title: "End", key: "en", width: 68, align: "center",
+      render: (_, r) => r.endTime
+        ? <span className="text-[11px] tabular-nums font-mono">{fmtHHMM(r.endTime)}</span>
+        : <Tag color="green" className="!rounded-md !text-[9px] !font-black animate-pulse">● LIVE</Tag> },
+    { title: "Qty", key: "q", width: 65, align: "center",
+      render: (_, r) => <span className="text-[12px] font-black text-slate-800 tabular-nums">{safeNum(r.productionQty)}</span> },
+    { title: "Target", key: "tg", width: 72, align: "center",
+      render: (_, r) => {
+        /* target per session = session.demandPerShift saved at start */
+        const t = safeNum(r.demandPerShift || r.targetQty || r.target || 0);
+        return t > 0
+          ? <span className="text-[11px] font-semibold text-slate-600 tabular-nums">{t}</span>
+          : <Tooltip title="demandPerShift not set on ConveyorStrength">
+              <span className="text-slate-300 text-[10px]">—</span>
+            </Tooltip>;
       } },
-  ], []);
+    { title: "Achv %", key: "a", width: 80, align: "center",
+      render: (_, r) => {
+        const prod  = safeNum(r.productionQty);
+        const tgt   = safeNum(r.demandPerShift || r.targetQty || r.target || 0);
+        const ap    = tgt > 0 ? pct(prod, tgt) : (safeNum(r.achievementPercent) > 0 ? safeNum(r.achievementPercent) : null);
+        if (ap === null) return <span className="text-slate-300 text-[10px]">—</span>;
+        const ac = achv(ap);
+        return <Tag color={ac.antd} className="!rounded-md !text-[10px] !font-black">{fmt1(ap)}%</Tag>;
+      } },
+    { title: "Running", key: "ru", width: 78, align: "center",
+      render: (_, r) => <span className="text-[11px] text-teal-700 font-semibold">{formatHM(r.runningMinutes)}</span> },
+    { title: "Downtime", key: "dt", width: 78, align: "center",
+      render: (_, r) => {
+        const v = safeNum(r.downtimeMinutes);
+        return v > 0 ? <span className="text-[11px] text-red-600 font-semibold">{formatHM(v)}</span>
+                     : <span className="text-slate-200">—</span>;
+      } },
+    { title: "Rate/hr", key: "rt", width: 76, align: "center",
+      render: (_, r) => safeNum(r.averageProductionRate) > 0
+        ? <span className="text-[11px] font-semibold text-slate-600 tabular-nums">{fmt1(r.averageProductionRate)}</span>
+        : <span className="text-slate-200">—</span> },
+    { title: "Status", key: "s", width: 90, align: "center",
+      render: (_, r) => r.isRunning
+        ? <Tag color="green"    className="!rounded-md !text-[10px] !font-bold">▶ Running</Tag>
+        : <Tag color="geekblue" className="!rounded-md !text-[10px] !font-bold">✓ Done</Tag> },
+  ];
 
-  const upcomingColumns = useMemo(() => [
-    { title: "Block", dataIndex: "blockName", key: "block" },
-    { title: "Start", dataIndex: "startTime", key: "start", width: 76, align: "center", render: fmtTime },
-    { title: "End", dataIndex: "endTime", key: "end", width: 76, align: "center", render: fmtTime },
-    { title: "Duration", dataIndex: "durationMinutes", key: "dur", width: 90, align: "center", render: fmtMinutes },
-    { title: "Type", dataIndex: "type", key: "type", width: 90, align: "center",
-      render: (v, r) => <Tag color={r.isBreak ? "gold" : "blue"} className="!rounded-lg !text-[11px]">{r.isBreak ? "BREAK" : v}</Tag> },
-  ], []);
-
-  /* ══════════════════════════════════════════════════════════
-     RENDER
-  ══════════════════════════════════════════════════════════ */
-  if (authLoading) return <FullPageSpin label="Authenticating..." />;
-  if (!user) return null;
-
-  if (!role) {
+  /* ── INITIAL LOADING SCREEN ── */
+  if (loading && firstLoad && scopeReady) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <Alert type="error" showIcon message="Not authorized" description="Your account role is not recognized for Live Analysis." className="!rounded-xl !max-w-md" />
+      <div className="fixed inset-0 z-50 flex items-center justify-center"
+        style={{ background: "rgba(15,23,42,0.1)", backdropFilter: "blur(8px)" }}>
+        <div className="flex flex-col items-center gap-5 bg-white border border-slate-200 rounded-3xl px-14 py-12"
+          style={{ boxShadow: "0 24px 60px rgba(15,23,42,0.12)" }}>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg,#0d9488,#0891b2)" }}>
+            <Activity size={26} className="text-white animate-pulse" />
+          </div>
+          <Spin size="large" />
+          <div className="text-center">
+            <p className="text-slate-700 font-bold text-sm">Loading Live Analysis</p>
+            <p className="text-slate-400 text-xs mt-1">Connecting to production stream…</p>
+          </div>
+        </div>
       </div>
     );
   }
 
-  if (masterLoading) return <FullPageSpin label="Loading organization data..." />;
-
-  const scopeHint =
-    role === ROLE.SUPER_ADMIN ? "Select Location → Plant → Shift to view Live Analysis"
-    : role === ROLE.PLANT_ADMIN ? "Select Plant → Shift to view Live Analysis"
-    : "Select a Shift to view Live Analysis";
-
+  /* ════════════════════════════════════════════════════════ */
   return (
-    <div className="min-h-screen bg-slate-50 p-3 space-y-3 max-w-[1600px] mx-auto">
+    <div className="min-h-screen bg-slate-100">
 
-      {/* ── HEADER ── */}
-      <div className="rounded-2xl overflow-hidden shadow-md relative" style={{ background: "linear-gradient(135deg,#0E7490,#0891B2)" }}>
-        <div className="absolute inset-0 opacity-[0.06] pointer-events-none"
-          style={{ backgroundImage: "radial-gradient(circle at 85% 20%, white 0%, transparent 45%)" }} />
-        <div className="px-4 py-3.5 flex items-center justify-between flex-wrap gap-3 relative">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center flex-shrink-0">
-              <Activity size={18} className="text-white" />
+      {/* ══ STICKY NAVBAR (top: 0) ══ */}
+      <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200"
+        style={{ boxShadow: "0 1px 4px rgba(15,23,42,0.06)" }}>
+        <div className="px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+
+          {/* Brand */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: "linear-gradient(135deg,#0d9488,#0891b2)" }}>
+              <Activity size={17} className="text-white" />
             </div>
-            <div className="min-w-0">
-              <div className="text-white font-extrabold text-sm tracking-wide">LIVE PRODUCTION ANALYSIS</div>
-              <div className="flex items-center gap-1 mt-1 flex-wrap">
-                {breadcrumbParts.length ? breadcrumbParts.map((part, i) => (
-                  <span key={`${part}-${i}`} className="flex items-center gap-1">
-                    {i > 0 && <ChevronRight size={9} className="text-white/40" />}
-                    <span className="text-[10px] font-semibold text-white/90 bg-white/10 border border-white/15 rounded-md px-1.5 py-0.5">
-                      {part}
-                    </span>
-                  </span>
-                )) : (
-                  <span className="text-white/60 text-[10px]">Select scope below to begin</span>
-                )}
-              </div>
+            <div className="leading-none">
+              <div className="text-[13px] font-black text-slate-800">Live Analysis</div>
+              <div className="text-[9px] text-slate-400 font-medium tracking-wide hidden sm:block">Paint Shop MIS</div>
             </div>
+            {/* LIVE pill */}
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full"
+              style={{ background: "#f0fdf4", border: "1px solid #86efac" }}>
+              <Radio size={9} className="text-green-500 animate-pulse" />
+              <span className="text-[9px] font-black text-green-600 tracking-widest">LIVE</span>
+            </div>
+            {data && <SPill status={status} />}
           </div>
-          <Space size={8}>
-            {liveData?.shift?.status && <ShiftStatusTag status={liveData.shift.status} light />}
-            <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-lg px-2.5 py-1">
-              <Clock size={11} className="text-white/70" />
-              <span className="text-white text-[11px] font-mono tabular-nums">
-                {liveData?.lastUpdatedAt ? dayjs(liveData.lastUpdatedAt).format("HH:mm:ss") : "—"}
+
+          {/* Breadcrumb (desktop) */}
+          {data && (
+            <div className="hidden lg:flex items-center gap-1.5 text-[10px] text-slate-500 font-medium">
+              <span>{data.scope?.locationName || uLoc}</span>
+              <ChevronRight size={9} className="text-slate-300" />
+              <span>{data.scope?.plantName}</span>
+              <ChevronRight size={9} className="text-slate-300" />
+              <span className="font-bold text-slate-700">{data.scope?.shiftName}</span>
+              {cnvLabel && <><ChevronRight size={9} className="text-slate-300" /><span className="font-bold text-slate-700">{cnvLabel}</span></>}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {lastUpdated && (
+              <span className="hidden md:block text-[9px] text-slate-400 tabular-nums font-mono">
+                {fmtClock(lastUpdated)}
               </span>
-              {liveRefreshing && <Spin size="small" />}
-            </div>
-            <Tooltip title="Refresh now">
-              <Button
-                size="small" icon={<RefreshCw size={13} />} loading={liveRefreshing}
-                onClick={() => fetchLive({ background: true })} disabled={!canFetchLive}
-                className="!rounded-lg !border-white/25 !bg-white/10 !text-white hover:!bg-white/20"
-              />
+            )}
+            <Tooltip title="Refresh (auto every 10 s)">
+              <Button size="small"
+                icon={<RefreshCw size={12} className={loading && !firstLoad ? "animate-spin" : ""} />}
+                onClick={() => fetchLive(false)}
+                disabled={loading && !firstLoad}
+                className="!rounded-lg" />
             </Tooltip>
-          </Space>
-        </div>
-      </div>
-
-      {masterError && (
-        <Alert type="error" showIcon message="Unable to load organization data." description={masterError}
-          action={<Button size="small" danger onClick={loadMasterData}>Retry</Button>} className="!rounded-xl" />
-      )}
-
-      {/* ── FILTERS ── */}
-      <div className={CARD}>
-        <div className="px-3.5 py-2.5 border-b border-slate-100">
-          <SectionHead icon={Layers3} border="#0d9488" color="text-teal-600"
-            extra={<RoleBadge role={role} />}>
-            Filter Scope
-          </SectionHead>
-        </div>
-        <div className="px-4 py-3.5 space-y-2.5">
-          <Row gutter={[10, 10]}>
-            <Col xs={24} sm={12} md={6}>
-              {role === ROLE.SUPER_ADMIN ? (
-                <SelectField
-                  icon={MapPin} label="Location" placeholder="Select location" showSearch optionFilterProp="label"
-                  value={locationId} onChange={handleLocationChange}
-                  options={locations.map((l) => ({ value: l._id, label: l.locationName }))}
-                  notFoundContent={<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No locations found" />}
-                />
-              ) : (
-                <LockedField icon={MapPin} label="Location" value={lockedLocationName} />
-              )}
-            </Col>
-
-            <Col xs={24} sm={12} md={6}>
-              {role === ROLE.MANAGER ? (
-                <LockedField icon={Factory} label="Plant" value={assignedPlant?.plantName} />
-              ) : (
-                <SelectField
-                  icon={Factory} label="Plant"
-                  placeholder={role === ROLE.SUPER_ADMIN && !locationId ? "Select a location first" : "Select plant"}
-                  disabled={role === ROLE.SUPER_ADMIN && !locationId}
-                  showSearch optionFilterProp="label"
-                  value={plantId} onChange={handlePlantChange}
-                  options={plantOptions.map((p) => ({ value: p._id, label: p.plantName }))}
-                  notFoundContent={<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No plants under this location" />}
-                />
-              )}
-            </Col>
-
-            <Col xs={24} sm={12} md={6}>
-              <SelectField
-                icon={Clock} label="Shift"
-                placeholder={!effectivePlantId ? "Select a plant first" : "Select shift"}
-                disabled={!effectivePlantId} loading={shiftsLoading}
-                value={shiftId} onChange={handleShiftChange}
-                options={shifts.map((s) => ({
-                  value: s._id,
-                  label: `${s.shiftName}${s.shiftType ? ` — ${s.shiftType}` : ""}${s._id === currentShiftId ? " • Now" : ""}`,
-                }))}
-                notFoundContent={<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No shifts configured for this plant" />}
-                hint={
-                  !shiftsLoading && shifts.length > 0 && !currentShiftId && !shiftId ? (
-                    <div className="text-[10px] text-amber-600 mt-1 flex items-center gap-1">
-                      <AlertTriangle size={10} /> Currently no active shift — select one manually
-                    </div>
-                  ) : null
-                }
-              />
-              {shiftsError && <div className="text-[10px] text-red-500 mt-1">{shiftsError}</div>}
-            </Col>
-
-            <Col xs={24} sm={12} md={6}>
-              <SelectField
-                icon={Layers3} label="Conveyor (optional)"
-                placeholder={!shiftId ? "Select a shift first" : "All conveyors on this shift"}
-                disabled={!shiftId} allowClear
-                value={conveyorId} onChange={handleConveyorChange}
-                options={conveyorOptions.map((c) => ({ value: c._id, label: c.conveyorName }))}
-                notFoundContent={<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active conveyors on this plant" />}
-              />
-            </Col>
-          </Row>
-
-          <Divider style={{ margin: "6px 0" }} />
-
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <span className="text-[10px] text-slate-400 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
-              {canFetchLive ? "Live Analysis refreshes every 10 seconds" : scopeHint}
-            </span>
-            {liveData?.shift?.status && <ShiftStatusTag status={liveData.shift.status} />}
+            <Button size="small" icon={<ArrowLeft size={11} />} onClick={() => navigate(-1)}
+              className="!rounded-lg !text-slate-600 !border-slate-200 !text-[11px]">
+              <span className="hidden sm:inline">Back</span>
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* ── NOTHING SELECTED YET ── */}
-      {!canFetchLive && (
+      {/* ══ STICKY KPI BAR (top: 56px = navbar height) ══ */}
+      {data && !error && (
+        <div className="sticky z-40 bg-white border-b border-slate-100"
+          style={{ top: 56, boxShadow: "0 1px 3px rgba(15,23,42,0.04)" }}>
+          <div className="px-4 sm:px-6 py-2">
+            <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
+              <KCard icon={Package}      tone="blue"
+                label="Total Production"
+                value={fmt0(totalProduction)}
+                pulse={!!raw.activeModel} />
+
+              <KCard icon={Target}       tone={hasTarget ? "slate" : "slate"}
+                label="Total Target"
+                value={hasTarget ? fmt0(totalTarget) : "—"}
+                sub={!hasTarget ? "Set demandPerShift" : undefined}
+                warn={!hasTarget} />
+
+              <KCard icon={Award}        tone={achvTone(sumAchvPct)}
+                label="Achievement %"
+                value={sumAchvPct !== null ? `${fmt1(sumAchvPct)}%` : "—"}
+                sub={sumAchvPct === null ? "No target set" : undefined}
+                warn={sumAchvPct === null} />
+
+              <KCard icon={Timer}        tone="teal"
+                label="Running Time"
+                value={formatHM(raw.totalRunningMinutes)} />
+
+              <KCard icon={TrendingDown} tone={safeNum(raw.totalDowntimeMinutes) > 30 ? "red" : "slate"}
+                label="Downtime"
+                value={formatHM(raw.totalDowntimeMinutes)} />
+
+              <KCard icon={Gauge}        tone="cyan"
+                label="Rate / hr"
+                value={fmt1(raw.averageProductionRate)} />
+
+              <KCard icon={CheckCircle2} tone="purple"
+                label="Completed"
+                value={String(safeNum(raw.completedModels))}
+                sub="models" />
+
+              <KCard icon={Activity}     tone={raw.activeModel ? "green" : "slate"}
+                label="Active Model"
+                value={raw.activeModel ? "Yes" : "—"}
+                pulse={!!raw.activeModel} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ SCROLLABLE BODY ══ */}
+      {/* paddingBottom for footer */}
+      <div className="px-3 sm:px-5 py-3 space-y-3 max-w-[1700px] mx-auto pb-14">
+
+        {/* ── SCOPE FILTER ── */}
         <div className={CARD}>
-          <div className="py-12">
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={scopeHint} />
+          <div className="px-4 py-2.5 border-b border-slate-100">
+            <SHead icon={MapPin} border="#0d9488" color="text-teal-500">Scope Selection</SHead>
+          </div>
+          <div className="px-4 py-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+              {/* LOCATION */}
+              {role === "superAdmin" ? (
+                <div>
+                  <label className={LABEL}>Location</label>
+                  <Select size="small" className="w-full" placeholder="Select location"
+                    loading={ldLoc} value={selLoc} showSearch optionFilterProp="label"
+                    options={locations.map((l) => ({ value: String(l._id), label: l.locationName }))}
+                    onChange={onLoc} />
+                </div>
+              ) : <LockedField label="Location" value={uLoc} />}
+
+              {/* PLANT — only shows plants of the selected location */}
+              {role === "superAdmin" || role === "plantAdmin" ? (
+                <div>
+                  <label className={LABEL}>Plant</label>
+                  <Select size="small" className="w-full"
+                    placeholder={selLoc ? "Select plant" : "Select location first"}
+                    loading={ldPlt} disabled={!selLoc} value={selPlt}
+                    showSearch optionFilterProp="label"
+                    options={plants.map((p) => ({ value: String(p._id), label: p.plantName }))}
+                    onChange={onPlt} />
+                </div>
+              ) : <LockedField label="Plant" value={uPlant} />}
+
+              {/* SHIFT — only shows shifts of the selected plant */}
+              <div>
+                <label className={LABEL}>Shift</label>
+                <Select size="small" className="w-full"
+                  placeholder={selPlt ? "Select shift" : "Select plant first"}
+                  loading={ldSft} disabled={!selPlt} value={selSft}
+                  options={shifts.map((s) => ({
+                    value: String(s._id),
+                    label: `${s.shiftName}${shiftNow(s) ? " ●" : ""}  (${s.shiftStartTime}–${s.shiftEndTime})`,
+                  }))}
+                  onChange={onSft} />
+              </div>
+
+              {/* CONVEYOR — only shows conveyors of location+plant+shift */}
+              <div>
+                <label className={LABEL}>
+                  Conveyor <span className="font-normal normal-case text-slate-300">(optional)</span>
+                </label>
+                <Select size="small" className="w-full" placeholder="All conveyors"
+                  loading={ldCnv} disabled={!selSft} value={selCnv} allowClear
+                  options={conveyors.map((c) => ({
+                    value: String(c.conveyorId?._id || c.conveyorId || c._id),
+                    label: c.conveyorName || "Conveyor",
+                  }))}
+                  onChange={onCnv} />
+              </div>
+            </div>
+
+            {!scopeReady && (
+              <div className="mt-2.5 flex items-center gap-1.5 text-[10px] text-slate-400">
+                <AlertTriangle size={9} className="text-amber-400 flex-shrink-0" />
+                {role === "manager" ? "Select a shift to load Live Analysis."
+                  : role === "plantAdmin" ? "Select plant → shift to load."
+                    : "Select location → plant → shift to load."}
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {/* ── LIVE ANALYSIS ── */}
-      {canFetchLive && (
-        <>
-          {liveError && (
-            <Alert
-              type="error" showIcon message="Unable to load Live Analysis" description={liveError}
-              action={<Button size="small" danger onClick={() => fetchLive({ background: false })}>Retry</Button>}
-              className="!rounded-xl"
-            />
-          )}
+        {/* ── SCOPE NOT READY ── */}
+        {!scopeReady && (
+          <div className={`${CARD} py-20 flex flex-col items-center gap-4`}>
+            <div className="w-20 h-20 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+              <Cpu size={32} className="text-slate-200" />
+            </div>
+            <div className="text-center">
+              <p className="text-slate-600 text-sm font-bold">Live Production Monitor</p>
+              <p className="text-slate-400 text-xs mt-1">Select scope above to begin.</p>
+              <p className="text-slate-300 text-[10px] mt-1">Auto-refreshes every 10 seconds.</p>
+            </div>
+          </div>
+        )}
 
-          {liveLoading && !liveData && (
-            <div className={CARD}><div className="py-16 flex justify-center"><Spin size="large" /></div></div>
-          )}
+        {/* ── ERROR ── */}
+        {scopeReady && error && (
+          <Alert type="error" showIcon icon={<WifiOff size={14} />}
+            message={<span className="text-[12px] font-semibold">{error}</span>}
+            action={<Button size="small" icon={<RotateCcw size={11} />} onClick={() => fetchLive(false)} className="!rounded-lg">Retry</Button>}
+            className="!rounded-2xl" />
+        )}
 
-          {liveData && (
-            <>
-              {/* Shift Timer — status-colored, clock synced to serverTime */}
-              <div className={`${CARD} border ${shiftToneBg}`}>
-                <div className="px-4 py-3.5 flex items-center justify-between flex-wrap gap-4">
-                  <div className="min-w-[140px]">
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${shiftMeta.tone === "green" ? "bg-green-500 animate-pulse" : shiftMeta.tone === "amber" ? "bg-amber-500 animate-pulse" : "bg-slate-400"}`} />
-                      {liveData.scope.shiftName || "Shift"}
+        {/* ── FETCHING FALLBACK ── */}
+        {scopeReady && !error && !data && loading && (
+          <div className={`${CARD} py-24 flex flex-col items-center gap-4`}>
+            <Spin size="large" /><p className="text-slate-400 text-xs">Fetching production data…</p>
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════════════
+            DASHBOARD
+        ════════════════════════════════════════════════════ */}
+        {scopeReady && !error && data && (
+          <>
+
+            {/* No-target advisory */}
+            {!hasTarget && timeline.length > 0 && (
+              <Alert type="warning" showIcon icon={<AlertTriangle size={13} />}
+                message={<span className="text-[11px] font-bold">Total Target & Achievement % unavailable</span>}
+                description={
+                  <span className="text-[10px]">
+                    <b>demandPerShift</b> is 0 on the ConveyorStrength records for today's sessions.
+                    Open <b>Conveyor Strength Master</b> → set <b>Demand Per Shift</b> for this plant + shift + conveyor.
+                    Metrics will populate automatically from the next session start.
+                  </span>
+                }
+                className="!rounded-2xl" />
+            )}
+
+            {/* ── ROW 1: SHIFT TIMER + SHIFT SUMMARY ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+
+              {/* SHIFT TIMER (2 cols) */}
+              <div className={`${CARD} lg:col-span-2`}>
+                <div className="px-4 py-2.5 border-b border-slate-100">
+                  <SHead icon={Clock3} border="#0d9488" color="text-teal-600"
+                    extra={<SPill status={status} />}>Shift Timer</SHead>
+                </div>
+                <div className="px-4 py-3 space-y-3">
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {[
+                      { lbl: "Shift",       val: <span className="flex items-center gap-1">{status !== "Completed" && status !== "Not Started" ? <Sun size={9} className="text-amber-400" /> : <Moon size={9} className="text-slate-400" />}{data.scope?.shiftName}</span> },
+                      { lbl: "Start",       val: <span className="tabular-nums font-mono">{fmtHHMM(shift.shiftStartTime)}</span> },
+                      { lbl: "End",         val: <span className="tabular-nums font-mono">{fmtHHMM(shift.shiftEndTime)}</span>   },
+                      { lbl: "Elapsed",     val: <span className="text-teal-700 font-black">{formatHM(elapsedMin)}</span>         },
+                      { lbl: "Remaining",   val: <span className={`font-black ${status === "Completed" ? "text-slate-400" : "text-blue-700"}`}>{status === "Completed" ? "Ended" : formatHM(remainMin)}</span> },
+                      { lbl: "Working Hrs", val: <span className="font-semibold">{shift.actualWorkingHours || formatHM(shift.actualWorkingMinutes)}</span> },
+                    ].map(({ lbl, val }) => (
+                      <div key={lbl}><label className={LABEL}>{lbl}</label><div className={FIELD}>{val}</div></div>
+                    ))}
+                  </div>
+                  {shift.totalShiftMinutes > 0 && (
+                    <div>
+                      <Progress percent={shiftPct}
+                        strokeColor={status === "Completed" ? "#94a3b8" : status === "Break" ? "#f59e0b" : { "0%": "#0d9488", "100%": "#0891b2" }}
+                        trailColor="#f1f5f9" size={["100%", 8]} showInfo={false} />
+                      <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
+                        <span>{shiftPct}% elapsed</span>
+                        <span>Break: {formatHM(shift.totalBreakMinutes)}</span>
+                        <span>{shift.crossesMidnight ? "Overnight" : "Day shift"}</span>
+                      </div>
                     </div>
-                    <div className="text-base font-mono font-extrabold text-slate-800 mt-1 tabular-nums">
-                      {fmtTime(liveData.shift.shiftStartTime)} — {fmtTime(liveData.shift.shiftEndTime)}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Elapsed</div>
-                    <div className="text-lg font-mono font-extrabold text-teal-700 tabular-nums leading-tight">{fmtMinutes(elapsedMin)}</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Remaining</div>
-                    <div className="text-lg font-mono font-extrabold text-slate-700 tabular-nums leading-tight">{fmtMinutes(remainingMin)}</div>
-                  </div>
-                  <div className="flex-1 min-w-[160px] flex items-center gap-2.5">
-                    <Progress
-                      percent={shiftProgressPct} size="small" showInfo={false}
-                      strokeColor={shiftProgressColor} trailColor="#e2e8f0" strokeLinecap="round"
-                      className="!flex-1"
-                    />
-                    <span className="text-[11px] font-bold tabular-nums" style={{ color: shiftProgressColor }}>{shiftProgressPct}%</span>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              {/* KPI Row — exactly the 8 metrics specified, in order */}
-              <Row gutter={[10, 10]}>
-                <Col xs={12} sm={8} md={6} lg={3}>
-                  <KpiTile icon={Package} label="Total Production" value={fmtNum(liveData.summary?.totalProduction)} tone="blue" />
-                </Col>
-                <Col xs={12} sm={8} md={6} lg={3}>
-                  <KpiTile icon={Target} label="Total Target" value={fmtNum(liveData.summary?.totalTarget)} tone="purple" />
-                </Col>
-                <Col xs={12} sm={8} md={6} lg={3}>
-                  <KpiTile
-                    icon={TrendingUp} label="Achievement" value={fmtPct(liveData.summary?.achievementPercent)}
-                    tone={achvTone(liveData.summary?.achievementPercent)}
-                    progress={Number(liveData.summary?.achievementPercent) || 0}
-                  />
-                </Col>
-                <Col xs={12} sm={8} md={6} lg={3}>
-                  <KpiTile icon={Timer} label="Running Time" value={fmtMinutes(liveData.summary?.totalRunningMinutes)} tone="teal" />
-                </Col>
-                <Col xs={12} sm={8} md={6} lg={3}>
-                  <KpiTile icon={Clock3} label="Downtime" value={fmtMinutes(liveData.summary?.totalDowntimeMinutes)} tone="amber" />
-                </Col>
-                <Col xs={12} sm={8} md={6} lg={3}>
-                  <KpiTile icon={Gauge} label="Avg Rate / hr" value={fmtNum(liveData.summary?.averageProductionRate)} tone="cyan" />
-                </Col>
-                <Col xs={12} sm={8} md={6} lg={3}>
-                  <KpiTile icon={CheckCircle2} label="Completed Models" value={fmtNum(liveData.summary?.completedModels)} tone="green" />
-                </Col>
-                <Col xs={12} sm={8} md={6} lg={3}>
-                  <KpiTile icon={Zap} label="Active Model" value={liveData.summary?.activeModel ? "Running" : "Idle"} tone={liveData.summary?.activeModel ? "green" : "slate"} />
-                </Col>
-              </Row>
+              {/* SHIFT SUMMARY (1 col) */}
+              <div className={CARD}>
+                <div className="px-4 py-2.5 border-b border-slate-100">
+                  <SHead icon={Sigma} border="#6366f1" color="text-indigo-500">Shift Summary</SHead>
+                </div>
+                <div className="px-4 py-2">
+                  <SRow label="Total Production">
+                    <span className="text-blue-700 font-black tabular-nums text-[14px]">{fmt0(totalProduction)}</span>
+                  </SRow>
+                  <SRow label="Total Target">
+                    {hasTarget
+                      ? <span className="font-black tabular-nums text-[13px] text-slate-700">{fmt0(totalTarget)}</span>
+                      : <Tooltip title="Set demandPerShift in Conveyor Strength Master">
+                          <span className="text-slate-400 text-[10px]">Not configured</span>
+                        </Tooltip>}
+                  </SRow>
+                  <SRow label="Achievement %">
+                    {sumAchvPct !== null
+                      ? <span className="font-black tabular-nums text-[13px]" style={{ color: sumAchv.hex }}>{fmt1(sumAchvPct)}%</span>
+                      : <Tooltip title="Requires demandPerShift on ConveyorStrength">
+                          <span className="text-slate-400 text-[10px]">No target set</span>
+                        </Tooltip>}
+                  </SRow>
+                  <SRow label="Running Time">
+                    <span className="text-teal-700 font-bold">{formatHM(raw.totalRunningMinutes)}</span>
+                  </SRow>
+                  <SRow label="Total Downtime">
+                    <span className={safeNum(raw.totalDowntimeMinutes) > 0 ? "text-red-600 font-bold" : "text-slate-400"}>
+                      {formatHM(raw.totalDowntimeMinutes)}
+                    </span>
+                  </SRow>
+                  <SRow label="Avg Rate / hr">
+                    <span className="text-cyan-700 font-bold tabular-nums">{fmt1(raw.averageProductionRate)}</span>
+                  </SRow>
+                  <SRow label="Completed Models">
+                    <Tag color="purple" className="!rounded-md !text-[10px] !font-bold">{safeNum(raw.completedModels)}</Tag>
+                  </SRow>
+                  <SRow label="Active Now">
+                    {raw.activeModel
+                      ? <Tag color="green" className="!rounded-md !text-[10px] !font-bold animate-pulse">● Running</Tag>
+                      : <span className="text-slate-400 text-[10px]">None</span>}
+                  </SRow>
+                </div>
+              </div>
+            </div>
 
-              {/* Current Block + Current Session */}
-              <Row gutter={[10, 10]}>
-                <Col xs={24} md={12}>
-                  <div className={`${CARD} h-full`}>
-                    <div className="px-3.5 py-2.5 border-b border-slate-100">
-                      <SectionHead icon={Layers3} border="#0d9488" color="text-teal-600"
-                        extra={liveData.currentBlock?.isBreak && (
-                          <Tag color="gold" className="!rounded-lg !font-bold !text-[10px]"><Coffee size={10} className="inline -mt-0.5 mr-1" />BREAK</Tag>
-                        )}>
-                        Current Block
-                      </SectionHead>
+            {/* ── ROW 2: CURRENT BLOCK + CURRENT SESSION ── */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+              {/* CURRENT BLOCK */}
+              <div className={CARD}>
+                <div className="px-4 py-2.5 border-b border-slate-100">
+                  <SHead icon={Layers} border="#7c3aed" color="text-purple-600">
+                    Current Block
+                    {block && !block.isBreak && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />}
+                  </SHead>
+                </div>
+                <div className="px-4 py-4">
+                  {!block ? (
+                    <div className="py-7 flex flex-col items-center gap-3 text-center">
+                      <div className="w-11 h-11 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+                        <Layers size={20} className="text-slate-200" />
+                      </div>
+                      <p className="text-[11px] font-semibold text-slate-400">
+                        {status === "Not Started" ? "Shift has not started" : status === "Completed" ? "Shift ended" : "No active block"}
+                      </p>
                     </div>
-                    <div className="px-4 py-3.5">
-                      {!liveData.currentBlock ? (
-                        <Empty
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description={
-                            liveData.shift.status === "Not Started" ? "Shift not started"
-                            : liveData.shift.status === "Completed" ? "Shift completed"
-                            : "No active block"
-                          }
-                          className="py-4"
-                        />
-                      ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                          <StatBox full label="Block" value={liveData.currentBlock.blockName} tone={liveData.currentBlock.isBreak ? "amber" : "teal"} />
-                          <StatBox label="Type" value={liveData.currentBlock.isBreak ? "Break" : "Production"} tone={liveData.currentBlock.isBreak ? "amber" : "blue"} />
-                          <StatBox label="Duration" value={fmtMinutes(liveData.currentBlock.durationMinutes)} tone="slate" />
-                          <StatBox label="Start" value={fmtTime(liveData.currentBlock.startTime)} tone="slate" />
-                          <StatBox label="End" value={fmtTime(liveData.currentBlock.endTime)} tone="slate" />
-                          <StatBox label="Elapsed" value={fmtMinutes(blockElapsedMin)} tone="cyan" />
-                          <StatBox label="Remaining" value={fmtMinutes(blockRemainingMin)} tone="purple" />
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                            style={block.isBreak ? { background: "#fefce8", border: "1px solid #fde68a" } : { background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+                            {block.isBreak ? <Coffee size={15} className="text-amber-600" /> : <Zap size={15} className="text-blue-600" />}
+                          </div>
+                          <div>
+                            <div className="text-[13px] font-black text-slate-800">{block.blockName}</div>
+                            <div className="text-[9px] text-slate-400 mt-0.5">{block.isBreak ? "Scheduled break" : `Block ${block.blockNumber || ""}`}</div>
+                          </div>
                         </div>
-                      )}
+                        {block.isBreak
+                          ? <Tag color="gold" className="!rounded-xl !font-bold !text-[10px] !px-3">☕ Break</Tag>
+                          : <Tag color="blue" className="!rounded-xl !font-bold !text-[10px] !px-3">⚡ Active</Tag>}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div><label className={LABEL}>Start</label><div className={`${FIELD} tabular-nums font-mono text-center`}>{fmtHHMM(block.startTime)}</div></div>
+                        <div><label className={LABEL}>End</label>  <div className={`${FIELD} tabular-nums font-mono text-center`}>{fmtHHMM(block.endTime)}</div></div>
+                        <div><label className={LABEL}>Duration</label><div className={`${FIELD} text-center font-semibold`}>{formatHM(block.durationMinutes)}</div></div>
+                      </div>
+                      {!block.isBreak && block.durationMinutes > 0 && (() => {
+                        const el  = Math.min(Math.max(Math.round(dayjs().diff(dayjs(block.startTime), "minute")), 0), block.durationMinutes);
+                        const bp  = Math.round((el / block.durationMinutes) * 100);
+                        return (
+                          <div>
+                            <div className="flex justify-between text-[9px] text-slate-400 mb-1">
+                              <span>Block progress</span>
+                              <span className="tabular-nums font-mono">{el}m / {block.durationMinutes}m</span>
+                            </div>
+                            <Progress percent={bp} strokeColor={{ "0%": "#7c3aed", "100%": "#6366f1" }}
+                              trailColor="#f5f3ff" size={["100%", 6]} showInfo={false} />
+                          </div>
+                        );
+                      })()}
                     </div>
-                  </div>
-                </Col>
+                  )}
+                </div>
+              </div>
 
-                <Col xs={24} md={12}>
-                  <div className={`${CARD} h-full`}>
-                    <div className="px-3.5 py-2.5 border-b border-slate-100">
-                      <SectionHead icon={Activity} border="#2563eb" color="text-blue-600">Current Production Session</SectionHead>
+              {/* CURRENT SESSION */}
+              <div className={CARD}>
+                <div className="px-4 py-2.5 border-b border-slate-100">
+                  <SHead icon={Play} border="#2563eb" color="text-blue-600">
+                    Current Session
+                    {perf.isRunning && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
+                  </SHead>
+                </div>
+                <div className="px-4 py-4">
+                  {!sess ? (
+                    <div className="py-7 flex flex-col items-center gap-3 text-center">
+                      <div className="w-11 h-11 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+                        <XCircle size={20} className="text-slate-200" />
+                      </div>
+                      <p className="text-[11px] font-semibold text-slate-400">No active production session</p>
                     </div>
-                    <div className="px-4 py-3.5">
-                      {!liveData.currentSession ? (
-                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active production session" className="py-4" />
-                      ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                          <StatBox full label="Model" value={liveData.currentSession.modelName} tone="cyan" />
-                          <StatBox label="Status" value={liveData.currentSession.status} tone={liveData.currentSession.performance?.isRunning ? "green" : "slate"} />
-                          <StatBox label="Quantity" value={fmtNum(liveData.currentSession.performance?.quantity)} tone="blue" />
-                          <StatBox label="Target" value={fmtNum(liveData.currentSession.performance?.target)} tone="purple" />
-                          <StatBox label="Achievement" value={fmtPct(liveData.currentSession.performance?.achievementPercent)} tone={achvTone(liveData.currentSession.performance?.achievementPercent)} />
-                          <StatBox label="Running Time" value={liveData.currentSession.performance?.runningTime} tone="slate" />
-                          <StatBox label="Downtime" value={fmtMinutes(liveData.currentSession.performance?.downtimeMinutes)} tone="amber" />
-                          <StatBox label="Average Rate" value={`${fmtNum(liveData.currentSession.performance?.averageProductionRate)}/hr`} tone="teal" />
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Tag color="cyan" className="!rounded-xl !text-[13px] !font-black !px-3.5 !py-0.5 !m-0">{sess.modelName}</Tag>
+                        <Tag color="green" className="!rounded-xl !text-[10px] !font-bold animate-pulse">● Running</Tag>
+                      </div>
+                      {/* Big 3 */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <BigN tone="blue"  label="Produced"    value={fmt0(sessProd)} />
+                        <BigN tone="slate" label="Target"      value={sessHasTarget ? fmt0(sessTarget) : "—"} />
+                        {/* Achievement — colour-coded, real */}
+                        <div className="rounded-xl border p-2 text-center"
+                          style={{ borderColor: sessAchv.hex + "55", background: sessAchv.hex + "0d" }}>
+                          <div className="text-[8px] font-bold uppercase tracking-widest opacity-50 mb-1"
+                            style={{ color: sessAchv.hex }}>Achievement</div>
+                          <div className="text-[20px] font-black tabular-nums leading-none"
+                            style={{ color: sessAchv.hex }}>
+                            {sessAchvPct !== null ? `${fmt1(sessAchvPct)}%` : "—"}
+                          </div>
                         </div>
+                      </div>
+                      {/* Achievement bar */}
+                      {sessHasTarget && sessAchvPct !== null && (
+                        <Progress percent={Math.min(sessAchvPct, 100)} strokeColor={sessAchv.hex}
+                          trailColor="#f1f5f9" size={["100%", 7]} showInfo={false} />
                       )}
+                      {/* Secondaries */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div><label className={LABEL}>Running</label><div className={`${FIELD} text-teal-700 font-bold text-center`}>{perf.runningTime || formatHM(perf.runningMinutes)}</div></div>
+                        <div><label className={LABEL}>Downtime</label><div className={`${FIELD} text-center font-bold ${safeNum(perf.downtimeMinutes) > 0 ? "text-red-600" : "text-slate-400"}`}>{formatHM(perf.downtimeMinutes)}</div></div>
+                        <div><label className={LABEL}>Rate/hr</label><div className={`${FIELD} text-slate-700 font-bold text-center tabular-nums`}>{fmt1(perf.averageProductionRate)}</div></div>
+                      </div>
                     </div>
-                  </div>
-                </Col>
-              </Row>
-
-              {/* Session Timeline — every running session is shown, none hidden */}
-              <div className={CARD}>
-                <div className="px-3.5 py-2.5 border-b border-slate-100">
-                  <SectionHead
-                    icon={Timer} border="#7c3aed" color="text-purple-600"
-                    extra={
-                      <Space size={6}>
-                        {liveSessionCount > 1 && (
-                          <Tag color="red" className="!rounded-lg !font-bold !text-[10px] !m-0">
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-white mr-1 animate-pulse" />
-                            {liveSessionCount} Live
-                          </Tag>
-                        )}
-                        <Badge count={liveData.timeline?.length || 0} showZero style={{ backgroundColor: "#7c3aed" }} />
-                      </Space>
-                    }
-                  >
-                    Session Timeline
-                  </SectionHead>
-                </div>
-                <div className="px-3.5 py-3">
-                  <Table
-                    size="small" rowKey={(r) => r.sessionId}
-                    columns={timelineColumns} dataSource={liveData.timeline || []}
-                    pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 880 }}
-                    locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No production sessions yet" /> }}
-                  />
+                  )}
                 </div>
               </div>
+            </div>
 
-              {/* Upcoming Blocks */}
+            {/* ── ROW 3: BLOCK PERFORMANCE ── */}
+            <div className={CARD}>
+              <div className="px-4 py-2.5 border-b border-slate-100">
+                <SHead icon={BarChart2} border="#0891b2" color="text-cyan-600"
+                  extra={<span className="text-[10px] text-slate-400">{allBlocks.filter((b) => !b.isBreak).length} production · {allBlocks.filter((b) => b.isBreak).length} break</span>}>
+                  Block Performance
+                </SHead>
+              </div>
+              <div className="px-1.5 py-1.5">
+                {allBlocks.length === 0
+                  ? <Empty description="No blocks generated." image={Empty.PRESENTED_IMAGE_SIMPLE} className="py-8" />
+                  : <div className="overflow-x-auto">
+                      <Table size="small" rowKey={(_, i) => `b${i}`} columns={blockCols}
+                        dataSource={allBlocks} pagination={false}
+                        rowClassName={(r) => {
+                          if (r.isBreak) return "!bg-amber-50/50";
+                          if (block && !block.isBreak && r.blockNumber === block.blockNumber) return "!bg-blue-50/60";
+                          return "";
+                        }} />
+                    </div>}
+              </div>
+            </div>
+
+            {/* ── ROW 4: SESSION TIMELINE (ALL sessions) ── */}
+            <div className={CARD}>
+              <div className="px-4 py-2.5 border-b border-slate-100">
+                <SHead icon={Activity} border="#059669" color="text-emerald-600"
+                  extra={
+                    <div className="flex items-center gap-2">
+                      {timeline.filter((r) => r.isRunning).length > 0 && (
+                        <span className="flex items-center gap-1 text-[10px] text-green-600 font-bold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                          {timeline.filter((r) => r.isRunning).length} running
+                        </span>
+                      )}
+                      <span className="text-[10px] text-slate-400">{timeline.length} total</span>
+                    </div>
+                  }>
+                  Session Timeline
+                </SHead>
+              </div>
+              <div className="px-1.5 py-1.5">
+                {timeline.length === 0
+                  ? <div className="py-10">
+                      <Empty description={
+                        <div className="text-center">
+                          <p className="text-[11px] text-slate-400 font-semibold">No sessions yet today</p>
+                          <p className="text-[9px] text-slate-300 mt-0.5">Appears when operators start production jobs.</p>
+                        </div>
+                      } image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                    </div>
+                  : <div className="overflow-x-auto">
+                      <Table size="small" rowKey={(_, i) => `s${i}`} columns={tlCols}
+                        dataSource={timeline} pagination={false}
+                        rowClassName={(r) => r.isRunning ? "!bg-green-50/40" : ""} />
+                    </div>}
+              </div>
+            </div>
+
+            {/* ── ROW 5: UPCOMING BLOCKS ── */}
+            {upcoming.length > 0 && (
               <div className={CARD}>
-                <div className="px-3.5 py-2.5 border-b border-slate-100">
-                  <SectionHead icon={Clock3} border="#d97706" color="text-amber-600">Upcoming Blocks</SectionHead>
+                <div className="px-4 py-2.5 border-b border-slate-100">
+                  <SHead icon={ChevronRight} border="#6366f1" color="text-indigo-500"
+                    extra={<span className="text-[10px] text-slate-400">{upcoming.length} remaining</span>}>
+                    Upcoming Blocks
+                  </SHead>
                 </div>
-                <div className="px-3.5 py-3">
-                  <Table
-                    size="small" rowKey={(r) => `${r.blockName}-${r.startTime}`}
-                    columns={upcomingColumns} dataSource={liveData.blocks?.upcoming || []}
-                    pagination={false} scroll={{ x: 500 }}
-                    locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No upcoming blocks" /> }}
-                  />
+                <div className="px-4 py-3 flex flex-wrap gap-1.5">
+                  {upcoming.slice(0, 20).map((b, i) => (
+                    <div key={i} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-semibold
+                      ${b.isBreak ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-slate-50 border-slate-200 text-slate-600"}`}>
+                      {b.isBreak ? <Coffee size={9} /> : <Timer size={9} />}
+                      <span>{b.blockName}</span>
+                      <span className="opacity-30 mx-0.5">·</span>
+                      <span className="tabular-nums font-mono opacity-60">{fmtHHMM(b.startTime)}</span>
+                    </div>
+                  ))}
+                  {upcoming.length > 20 && <span className="text-[10px] text-slate-400 self-center">+{upcoming.length - 20} more</span>}
                 </div>
               </div>
+            )}
 
-              {/* Block Performance — full-shift log */}
-              <div className={CARD}>
-                <div className="px-3.5 py-2.5 border-b border-slate-100">
-                  <SectionHead icon={Layers3} border="#0891b2" color="text-cyan-700">Block Performance — Full Shift Log</SectionHead>
-                </div>
-                <div className="px-3.5 py-3">
-                  <Table
-                    size="small" rowKey={(r) => `${r.blockLabel}-${r.startTime}`}
-                    columns={blockColumns} dataSource={liveData.blocks?.all || []}
-                    pagination={false} scroll={{ x: 760 }}
-                    locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No blocks for this shift" /> }}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-        </>
+            {/* ── SHIFT STATUS BANNERS ── */}
+            {status === "Completed" && (
+              <Alert type="info" showIcon icon={<CheckCircle2 size={14} />}
+                message={<span className="text-[12px] font-bold">Shift Completed</span>}
+                description="This shift has ended. The data above is the final recorded state."
+                className="!rounded-2xl" />
+            )}
+            {status === "Not Started" && (
+              <Alert type="warning" showIcon icon={<AlertTriangle size={14} />}
+                message={<span className="text-[12px] font-bold">Shift Not Started</span>}
+                description={`This shift begins at ${fmtHHMM(shift.shiftStartTime)}. Data will appear once production starts.`}
+                className="!rounded-2xl" />
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ══ STICKY FOOTER — polling heartbeat ══ */}
+      {scopeReady && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-md border-t border-slate-100 px-4 py-1">
+          <div className="max-w-[1700px] mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[9px] text-slate-400">
+              <Radio size={9} className={loading && !firstLoad ? "text-teal-500 animate-pulse" : "text-slate-300"} />
+              {loading && !firstLoad ? "Refreshing…" : "Auto-refreshing every 10 seconds"}
+            </div>
+            {lastUpdated && (
+              <span className="text-[9px] text-slate-400 tabular-nums font-mono">
+                Last: {fmtClock(lastUpdated)}
+              </span>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -626,57 +626,94 @@ export const buildCurrentBlock = ({
 export const buildBlockPerformance = ({
   shiftTimeline,
   sessions = [],
+  shiftTarget = 0,
   now = new Date(),
 }) => {
   if (!shiftTimeline?.timeline) return [];
 
+  const actualWorkingMinutes = shiftTimeline.actualWorkingMinutes || 0;
+  const targetPerWorkingMinute = (actualWorkingMinutes > 0 && shiftTarget > 0)
+    ? (shiftTarget / actualWorkingMinutes)
+    : 0;
+
   return shiftTimeline.timeline.map((block) => {
-    const productionSessions = sessions.filter((session) => {
+    if (block.isBreak) {
+      return {
+        blockNumber: block.blockNumber ?? null,
+        blockLabel: block.blockName,
+        blockType: "Break",
+        startTime: block.startTime,
+        endTime: block.endTime,
+        durationMinutes: block.durationMinutes,
+        productionQty: 0,
+        target: 0,
+        achievementPercent: 0,
+        productionRatePerHour: 0,
+        downtimeMinutes: 0,
+        runningMinutes: 0,
+        isBreak: true,
+        active: true,
+      };
+    }
+
+    const blockStart = safeDate(block.startTime);
+    const blockEnd = safeDate(block.endTime);
+
+    let blockProductionQty = 0;
+    let blockDowntimeMinutes = 0;
+
+    sessions.forEach((session) => {
       const sessionStart = safeDate(getSessionStart(session));
-      const sessionEnd =
-        safeDate(getSessionEnd(session)) || now;
+      const sessionEnd = safeDate(getSessionEnd(session)) || now;
 
-      if (!sessionStart) return false;
+      if (!sessionStart || !blockStart || !blockEnd) return;
 
-      return (
-        sessionStart < block.endTime &&
-        sessionEnd > block.startTime
+      const overlapStart = Math.max(sessionStart.getTime(), blockStart.getTime());
+      const overlapEnd = Math.min(sessionEnd.getTime(), blockEnd.getTime());
+      const overlapMinutes = overlapEnd > overlapStart
+        ? (overlapEnd - overlapStart) / 60000
+        : 0;
+
+      if (overlapMinutes <= 0) return;
+
+      const totalSessionMinutes = Math.max(
+        (sessionEnd.getTime() - sessionStart.getTime()) / 60000,
+        1
       );
+
+      const sessionQuantity = getSessionQuantity(session);
+      const sessionDowntime = getSessionDowntime(session);
+
+      // Proportional production for this specific hour block
+      blockProductionQty += sessionQuantity * (overlapMinutes / totalSessionMinutes);
+      blockDowntimeMinutes += sessionDowntime * (overlapMinutes / totalSessionMinutes);
     });
 
-    const productionQty = productionSessions.reduce(
-      (sum, session) =>
-        sum + getSessionQuantity(session),
-      0
-    );
+    const productionQty = Math.round(blockProductionQty);
+    const blockTarget = Math.round(targetPerWorkingMinute * (block.durationMinutes || 0));
+
+    const achievementPercent = blockTarget > 0
+      ? round((productionQty / blockTarget) * 100, 1)
+      : 0;
+
+    const productionRatePerHour = block.durationMinutes > 0
+      ? round((productionQty / block.durationMinutes) * 60, 1)
+      : 0;
 
     return {
       blockNumber: block.blockNumber ?? null,
       blockLabel: block.blockName,
-      blockType: block.type,
-
+      blockType: block.type || "Production",
       startTime: block.startTime,
       endTime: block.endTime,
-
       durationMinutes: block.durationMinutes,
-
       productionQty,
-
-      productionRatePerHour:
-        block.durationMinutes > 0
-          ? round(
-              (productionQty / block.durationMinutes) * 60,
-              2
-            )
-          : 0,
-
-      downtimeMinutes: 0,
-
-      runningMinutes: block.isBreak
-        ? 0
-        : block.durationMinutes,
-
-      isBreak: block.isBreak,
+      target: blockTarget,
+      achievementPercent,
+      productionRatePerHour,
+      downtimeMinutes: Math.round(blockDowntimeMinutes),
+      runningMinutes: Math.max((block.durationMinutes || 0) - Math.round(blockDowntimeMinutes), 0),
+      isBreak: false,
       active: true,
     };
   });
@@ -756,13 +793,22 @@ export const getLiveAnalysis = async ({
     conveyorId,
   });
 
-  const [shift, sessions] = await Promise.all([
-      Shift.findById(scope.shiftId).lean(),
+    const strengthFilter = {
+      plantId: scope.plantId,
+      shiftId: scope.shiftId,
+      status: "Active",
+    };
+    if (scope.conveyorId) {
+      strengthFilter.conveyorId = scope.conveyorId;
+    }
 
+        const [shift, sessions, activeStrengths] = await Promise.all([
+      Shift.findById(scope.shiftId).lean(),
       getLiveSessions({
         ...scope,
         date,
       }),
+      ConveyorStrength.find(strengthFilter).lean(),
     ]);
     
   if (!shift) {
@@ -773,6 +819,19 @@ export const getLiveAnalysis = async ({
     error.statusCode = 404;
     throw error;
   }
+
+  // 1. Calculate totalTarget FIRST so it is ready for block calculations
+  const masterTarget = (activeStrengths || []).reduce(
+    (sum, item) => sum + num(item.demandPerShift || 0),
+    0
+  );
+
+  const sessionTargetSum = (sessions || []).reduce(
+    (sum, session) => sum + num(session.demandPerShift || 0),
+    0
+  );
+
+  const totalTarget = masterTarget > 0 ? masterTarget : sessionTargetSum;
 
   const currentSession = getCurrentProductionSession(sessions);
 
@@ -811,6 +870,7 @@ export const getLiveAnalysis = async ({
     const blockPerformance = buildBlockPerformance({
       shiftTimeline,
       sessions,
+      shiftTarget: totalTarget,
       now,
     });
 
@@ -851,10 +911,6 @@ export const getLiveAnalysis = async ({
     );
   }, 0);
 
-  const totalTarget = sessions.reduce(
-    (sum, session) => sum + num(session.demandPerShift || 0),
-    0
-  );
 
   const shiftStatus = getShiftStatus({
     shiftStartTime: shiftTimeline.shiftStartTime,
