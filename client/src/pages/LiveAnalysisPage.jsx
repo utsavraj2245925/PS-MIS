@@ -177,6 +177,41 @@ const BigN = ({ label, value, tone = "slate" }) => {
 };
 
 /* ─────────────────────────────────────────────────────────── */
+/*  DOWNTIME BANNER (live ticking)                              */
+/* ─────────────────────────────────────────────────────────── */
+function DowntimeBanner({ activeDowntime }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const dtStart   = activeDowntime?.startTime ? dayjs(activeDowntime.startTime) : null;
+  const dtElapsed = dtStart ? Math.max(dayjs().diff(dtStart, "second"), 0) : 0;
+  const dtMins    = Math.floor(dtElapsed / 60);
+  const dtSecs    = dtElapsed % 60;
+  const dtType    = activeDowntime?.type === "Planned" ? "PLANNED" : "UNPLANNED";
+  const dtReason  = activeDowntime?.downtimeReason ? ` — ${activeDowntime.downtimeReason.toUpperCase()}` : "";
+  const dtLabel   = `${dtType}${dtReason}`;
+
+  return (
+    <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 flex items-center justify-between gap-2">
+      <div>
+        <div className="text-[9px] font-bold uppercase tracking-widest text-red-500 mb-0.5">{dtLabel}</div>
+        <div className="text-[11px] font-bold text-red-700">
+          Started {dtStart ? dtStart.format("HH:mm") : "—"}
+        </div>
+      </div>
+      <div className="text-right">
+        <div className="text-[9px] text-red-400 font-semibold uppercase tracking-wider mb-0.5">Running</div>
+        <div className="text-[18px] font-black font-mono tabular-nums text-red-600">
+          {String(dtMins).padStart(2, "0")}:{String(dtSecs).padStart(2, "0")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── */
 /*  MAIN PAGE                                                  */
 /* ─────────────────────────────────────────────────────────── */
 export default function LiveAnalysisPage() {
@@ -431,7 +466,9 @@ export default function LiveAnalysisPage() {
   const sessTarget    = safeNum(perf.target);
   const sessProd      = safeNum(perf.quantity);
   const sessHasTarget = sessTarget > 0;
-  const sessAchvPct   = sessHasTarget ? pct(sessProd, sessTarget) : null;
+  const sessAchvPct   = sessHasTarget
+    ? pct(sessProd, sessTarget)
+    : (perf.achievementPercent !== undefined && perf.achievementPercent !== null ? safeNum(perf.achievementPercent) : null);
   const sessAchv      = achv(sessAchvPct);
 
   /* Live elapsed (server-time anchored) */
@@ -989,13 +1026,21 @@ export default function LiveAnalysisPage() {
                     <div className="space-y-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Tag color="cyan" className="!rounded-xl !text-[13px] !font-black !px-3.5 !py-0.5 !m-0">{sess.modelName}</Tag>
-                        <Tag color="green" className="!rounded-xl !text-[10px] !font-bold animate-pulse">● Running</Tag>
+                        {sess.activeDowntime ? (
+                          <Tag color="volcano" className="!rounded-xl !text-[10px] !font-bold animate-pulse">● Downtime</Tag>
+                        ) : (
+                          <Tag color="green" className="!rounded-xl !text-[10px] !font-bold animate-pulse">● Running</Tag>
+                        )}
                       </div>
-                      {/* Big 3 */}
-                      <div className="grid grid-cols-3 gap-2">
+
+                      {/* ── LIVE DOWNTIME BANNER ── */}
+                      {sess.activeDowntime && sess.activeDowntime.startTime && (
+                        <DowntimeBanner activeDowntime={sess.activeDowntime} />
+                      )}
+
+                      {/* Produced & Achievement */}
+                      <div className="grid grid-cols-2 gap-2">
                         <BigN tone="blue"  label="Produced"    value={fmt0(sessProd)} />
-                        <BigN tone="slate" label="Target"      value={sessHasTarget ? fmt0(sessTarget) : "—"} />
-                        {/* Achievement — colour-coded, real */}
                         <div className="rounded-xl border p-2 text-center"
                           style={{ borderColor: sessAchv.hex + "55", background: sessAchv.hex + "0d" }}>
                           <div className="text-[8px] font-bold uppercase tracking-widest opacity-50 mb-1"
@@ -1006,22 +1051,12 @@ export default function LiveAnalysisPage() {
                           </div>
                         </div>
                       </div>
-                      {/* Achievement bar */}
-                      {sessHasTarget && sessAchvPct !== null && (
-                        <Progress percent={Math.min(sessAchvPct, 100)} strokeColor={sessAchv.hex}
-                          trailColor="#f1f5f9" size={["100%", 7]} showInfo={false} />
-                      )}
-                      {/* Secondaries */}
-                      <div className="grid grid-cols-3 gap-2">
-                        <div><label className={LABEL}>Running</label><div className={`${FIELD} text-teal-700 font-bold text-center`}>{perf.runningTime || formatHM(perf.runningMinutes)}</div></div>
-                        <div><label className={LABEL}>Downtime</label><div className={`${FIELD} text-center font-bold ${safeNum(perf.downtimeMinutes) > 0 ? "text-red-600" : "text-slate-400"}`}>{formatHM(perf.downtimeMinutes)}</div></div>
-                        <div><label className={LABEL}>Rate/hr</label><div className={`${FIELD} text-slate-700 font-bold text-center tabular-nums`}>{fmt1(perf.averageProductionRate)}</div></div>
-                      </div>
                     </div>
                   )}
                 </div>
               </div>
             </div>
+
 
             {/* ── ROW 3: BLOCK PERFORMANCE ── */}
             <div className={CARD}>
@@ -1092,15 +1127,18 @@ export default function LiveAnalysisPage() {
                   </SHead>
                 </div>
                 <div className="px-4 py-3 flex flex-wrap gap-1.5">
-                  {upcoming.slice(0, 20).map((b, i) => (
-                    <div key={i} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-semibold
-                      ${b.isBreak ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-slate-50 border-slate-200 text-slate-600"}`}>
-                      {b.isBreak ? <Coffee size={9} /> : <Timer size={9} />}
-                      <span>{b.blockName}</span>
-                      <span className="opacity-30 mx-0.5">·</span>
-                      <span className="tabular-nums font-mono opacity-60">{fmtHHMM(b.startTime)}</span>
-                    </div>
-                  ))}
+                  {upcoming.slice(0, 20).map((b, i) => {
+                    const cls = `flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-semibold ${b.isBreak ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-slate-50 border-slate-200 text-slate-600"}`;
+                    return (
+                      <div key={i} className={cls}>
+                        {b.isBreak ? <Coffee size={9} /> : <Timer size={9} />}
+                        <span>{b.blockName}</span>
+                        <span className="opacity-30 mx-0.5">·</span>
+                        <span className="tabular-nums font-mono opacity-60">{fmtHHMM(b.startTime)}</span>
+                      </div>
+                    );
+                  })}
+
                   {upcoming.length > 20 && <span className="text-[10px] text-slate-400 self-center">+{upcoming.length - 20} more</span>}
                 </div>
               </div>
@@ -1116,7 +1154,7 @@ export default function LiveAnalysisPage() {
             {status === "Not Started" && (
               <Alert type="warning" showIcon icon={<AlertTriangle size={14} />}
                 message={<span className="text-[12px] font-bold">Shift Not Started</span>}
-                description={`This shift begins at ${fmtHHMM(shift.shiftStartTime)}. Data will appear once production starts.`}
+                description={"This shift begins at " + fmtHHMM(shift.shiftStartTime) + ". Data will appear once production starts."}
                 className="!rounded-2xl" />
             )}
           </>
@@ -1141,4 +1179,4 @@ export default function LiveAnalysisPage() {
       )}
     </div>
   );
-}
+} 

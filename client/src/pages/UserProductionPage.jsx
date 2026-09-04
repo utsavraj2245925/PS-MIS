@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import axiosInstance from "../api/axiosInstance";
@@ -149,6 +149,10 @@ export default function UserProductionPage() {
   const [refreshing, setRefreshing]   = useState(false);
   const [now, setNow] = useState(dayjs());
 
+  /* ── orphaned sessions — Running on server but not tracked by UI ── */
+  const [orphanedSessions, setOrphanedSessions] = useState([]);
+  const [recoveringSessionId, setRecoveringSessionId] = useState(null);
+
   /* ── master data ── */
   const [models, setModels]           = useState([]);
   const [partsByModel, setPartsByModel] = useState({});
@@ -174,6 +178,9 @@ export default function UserProductionPage() {
     running: false,
     sessionId: null,
   });
+
+  /* ── shift tracking ── */
+  const activeShiftIdRef = useRef(null);
 
   /* ── conveyor line switcher ── */
   const [activeLineIdx, setActiveLineIdx] = useState(0);
@@ -324,14 +331,38 @@ export default function UserProductionPage() {
     if (stopType === "Unplanned" && wordCount(stopRemark) === 0) { message.error("Description is required for Unplanned downtime"); return; }
     if (stopType === "Unplanned" && wordCount(stopRemark) > 10) { message.error("Description cannot exceed 10 words"); return; }
 
-  const reasonName = downtimeTypes.find((t) => t._id === stopReasonId)?.name || "";
-    setActiveDowntime({
+    const reasonName = downtimeTypes.find((t) => t._id === stopReasonId)?.name || "";
+    const newActiveDowntime = {
       key: uid(), startTime: dayjs().toISOString(), type: stopType,
       downtimeTypeId: stopReasonId, downtimeName: reasonName,
       remark: stopType === "Unplanned" ? stopRemark : "", isAutoBreak: false,
-    });
+    };
+    setActiveDowntime(newActiveDowntime);
     setStopModalOpen(false);
     message.info(`Line stopped — ${stopType} downtime started`);
+
+    // Sync to running session on server immediately so Live Analysis reflects live downtime
+    const runningSessionIds = [
+      ...Object.values(lineJobs)
+        .filter((job) => job?.running && job?.sessionId)
+        .map((job) => job.sessionId),
+      ...(freeJob?.running && freeJob?.sessionId ? [freeJob.sessionId] : []),
+    ];
+    const currentDowntimes = [...downtimes, newActiveDowntime].map((d) => ({
+      downtimeTypeId: d.downtimeTypeId,
+      type: d.type,
+      startTime: d.startTime,
+      endTime: d.endTime || null,
+      duration: d.duration || 0,
+      remark: d.remark || "",
+    }));
+    for (const sessionId of [...new Set(runningSessionIds)]) {
+      API.put(`/production-sessions/${sessionId}/downtime`, {
+        downtimes: currentDowntimes,
+      }).catch((err) => {
+        console.error("Failed to sync live downtime start to session:", sessionId, err);
+      });
+    }
   };
 
   const resumeProduction = async () => {
@@ -535,6 +566,9 @@ export default function UserProductionPage() {
       /*
       * LINE JOBS
       */
+      // Track which live session IDs are claimed by line jobs
+      const claimedByLineJobs = new Set();
+
       setLineJobs((prev) => {
         const next = { ...prev };
 
@@ -565,6 +599,7 @@ export default function UserProductionPage() {
               sessionId: serverSession._id,
               startTime: serverSession.startTime || job?.startTime,
             };
+            claimedByLineJobs.add(String(serverSession._id));
           }
         });
 
@@ -572,14 +607,17 @@ export default function UserProductionPage() {
       });
 
       /*
-      * FREE-FORM JOB
+      * FREE-FORM JOB — handle the session that matches current freeJob.sessionId
+      * ALL OTHER unclaimed free sessions become "orphaned" and need user action.
       */
-      const orphanedFreeSession = liveSessions.find(s => !s.conveyorId);
-      
+      const freeLiveSessions = liveSessions.filter(s => !s.conveyorId);
+
+      let claimedFreeSessionId = null;
+
       setFreeJob((prev) => {
-        const serverSession = prev?.sessionId 
-          ? liveSessionMap.get(String(prev.sessionId)) 
-          : orphanedFreeSession;
+        const serverSession = prev?.sessionId
+          ? liveSessionMap.get(String(prev.sessionId))
+          : freeLiveSessions[0]; // fall back to first free session if none tracked
 
         if (!serverSession) {
           return {
@@ -590,6 +628,7 @@ export default function UserProductionPage() {
           };
         }
 
+        claimedFreeSessionId = String(serverSession._id);
         return {
           ...prev,
           running: true,
@@ -598,9 +637,26 @@ export default function UserProductionPage() {
         };
       });
 
-      if (orphanedFreeSession) {
-        setSelectedModelId(prev => prev || orphanedFreeSession.modelId?._id || orphanedFreeSession.modelId);
+      // Restore selected model for the active free job
+      const primaryFreeSession = freeLiveSessions.find(s =>
+        claimedFreeSessionId && String(s._id) === claimedFreeSessionId
+      ) || (freeLiveSessions.length > 0 && !claimedFreeSessionId ? freeLiveSessions[0] : null);
+
+      if (primaryFreeSession) {
+        const mId = primaryFreeSession.modelId?._id || primaryFreeSession.modelId;
+        if (mId) {
+          setSelectedModelId(mId);
+          fetchPartsForModel(mId).then(setCurrentModelParts);
+        }
       }
+
+      // Collect all free sessions NOT claimed by the active freeJob or lineJobs → orphaned
+      const newOrphaned = freeLiveSessions.filter(s => {
+        const sid = String(s._id);
+        return sid !== claimedFreeSessionId && !claimedByLineJobs.has(sid);
+      });
+
+      setOrphanedSessions(newOrphaned);
 
     } catch (err) {
       console.error(
@@ -612,11 +668,14 @@ export default function UserProductionPage() {
 
   
 
-  /** Load plant/user data after authentication is ready.*/
+  /** Load plant/user data after authentication is ready.
+   *  Also reconcile any server-side sessions that the browser may
+   *  have lost track of (e.g. page was closed mid-job). */
   useEffect(() => {
     if (authLoading || !user) return;
 
     loadEverything();
+    reconcileDraftSessions(); // detect any orphaned Running sessions immediately
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -633,240 +692,103 @@ export default function UserProductionPage() {
   ════════════════════════════════════════════════════════ */
   const [draftLoaded, setDraftLoaded] = useState(false);
 
-    useEffect(() => {
-      if (!user?.email || draftLoaded || !activeShift?._id) return;
+  useEffect(() => {
+    if (!user?.email || draftLoaded || !activeShift?._id) return;
 
-      const hydrateDraft = async () => {
-        const draft = loadDraft(user.email);
-        const today = dayjs().format("YYYY-MM-DD");
+    const hydrateDraft = async () => {
+      const draft = loadDraft(user.email);
+      const today = dayjs().format("YYYY-MM-DD");
 
-        // If draft belongs to a different/completed shift or different date, discard it
-        if (draft && (draft.shiftId !== String(activeShift._id) || draft.shiftDate !== today)) {
-          clearDraft(user.email);
-          setDraftLoaded(true);
-          return;
+      // If draft belongs to a different/completed shift or different date, discard it
+      if (draft && (draft.shiftId !== String(activeShift._id) || draft.shiftDate !== today)) {
+        clearDraft(user.email);
+      } else if (draft) {
+        if (draft.productionLog?.length) setProductionLog(draft.productionLog);
+        if (draft.defectLog?.length) setDefectLog(draft.defectLog);
+        if (draft.consumableLog?.length) setConsumableLog(draft.consumableLog);
+        if (draft.downtimes?.length) setDowntimes(draft.downtimes);
+        if (draft.activeDowntime) setActiveDowntime(draft.activeDowntime);
+
+        if (draft.currentPartQtys) setCurrentPartQtys(draft.currentPartQtys);
+        if (typeof draft.activeLineIdx === "number") setActiveLineIdx(draft.activeLineIdx);
+        if (typeof draft.lineQty === "number") setLineQty(draft.lineQty);
+        if (typeof draft.requiredManpower === "number") setRequiredManpower(draft.requiredManpower);
+        if (typeof draft.availableManpower === "number") setAvailableManpower(draft.availableManpower);
+
+        if (draft.lineJobs) setLineJobs(draft.lineJobs);
+        if (draft.freeJob) setFreeJob(draft.freeJob);
+
+        if (draft.selectedModelId) {
+          setSelectedModelId(draft.selectedModelId);
+          fetchPartsForModel(draft.selectedModelId).then(setCurrentModelParts);
         }
 
-      if (draft) {
-      if (draft.productionLog?.length) setProductionLog(draft.productionLog);
-      if (draft.defectLog?.length) setDefectLog(draft.defectLog);
-      if (draft.consumableLog?.length) setConsumableLog(draft.consumableLog);
-      if (draft.downtimes?.length) setDowntimes(draft.downtimes);
-      if (draft.activeDowntime) setActiveDowntime(draft.activeDowntime);
+        const hasSomething =
+          draft.productionLog?.length ||
+          draft.defectLog?.length ||
+          draft.downtimes?.length ||
+          draft.activeDowntime;
 
-      if (draft.currentPartQtys) setCurrentPartQtys(draft.currentPartQtys);
-      if (typeof draft.activeLineIdx === "number") {
-        setActiveLineIdx(draft.activeLineIdx);
-      }
-      if (typeof draft.lineQty === "number") {
-        setLineQty(draft.lineQty);
-      }
-      if (typeof draft.requiredManpower === "number") {
-        setRequiredManpower(draft.requiredManpower);
-      }
-      if (typeof draft.availableManpower === "number") {
-        setAvailableManpower(draft.availableManpower);
-      }
-
-      if (draft.selectedModelId) {
-        setSelectedModelId(draft.selectedModelId);
-        fetchPartsForModel(draft.selectedModelId).then(setCurrentModelParts);
-      }
-
-      /*
-       * ---------------------------------------------------------
-       * RECONCILE SAVED PRODUCTION SESSIONS
-       * ---------------------------------------------------------
-       *
-       * The browser draft may contain an old sessionId.
-       * The server is the source of truth for whether that
-       * session is actually still Running.
-       */
-      let liveSessions = [];
-
-      const hasSavedSessions =
-        Object.values(draft.lineJobs || {}).some(
-          (job) => job?.sessionId
-        ) ||
-        Boolean(draft.freeJob?.sessionId);
-
-      if (hasSavedSessions) {
-        try {
-          const response = await API.get("/production-sessions/live");
-
-          liveSessions = response?.data?.data || [];
-        } catch (err) {
-          console.error(
-            "Failed to reconcile live production sessions:",
-            err
-          );
-
-          /*
-           * Do NOT destroy the local draft when the server request
-           * itself fails. The operator may simply have a temporary
-           * network/API problem.
-           */
-          liveSessions = null;
+        if (hasSomething) {
+          message.info("Restored your unsaved shift entry from this browser");
         }
       }
 
-      /*
-       * ---------------------------------------------------------
-       * LINE JOB RECONCILIATION
-       * ---------------------------------------------------------
-       */
-      let reconciledLineJobs = draft.lineJobs || {};
+      await reconcileDraftSessions();
+      setDraftLoaded(true);
+    };
 
-      if (liveSessions !== null) {
-        const liveSessionIds = new Set(
-          liveSessions.map((session) => String(session._id))
-        );
-
-        reconciledLineJobs = Object.fromEntries(
-          Object.entries(reconciledLineJobs).map(([lineId, job]) => {
-            if (!job?.sessionId) {
-              return [lineId, job];
-            }
-
-            const sessionIsRunning = liveSessionIds.has(
-              String(job.sessionId)
-            );
-
-            if (sessionIsRunning) {
-              return [
-                lineId,
-                {
-                  ...job,
-                  running: true,
-                },
-              ];
-            }
-
-            /*
-             * Session is no longer Running on the server.
-             * Remove stale session metadata so the UI cannot
-             * continue showing a fake running session.
-             */
-            return [
-              lineId,
-              {
-                ...job,
-                running: false,
-                sessionId: null,
-                startTime: null,
-              },
-            ];
-          })
-        );
-      }
-
-      setLineJobs(reconciledLineJobs);
-
-      /*
-       * ---------------------------------------------------------
-       * FREE JOB RECONCILIATION
-       * ---------------------------------------------------------
-       */
-      let reconciledFreeJob = draft.freeJob || {
-        startTime: null,
-        running: false,
-        sessionId: null,
-      };
-
-      if (liveSessions !== null && reconciledFreeJob?.sessionId) {
-        const sessionIsRunning = liveSessions.some(
-          (session) =>
-            String(session._id) ===
-            String(reconciledFreeJob.sessionId)
-        );
-
-        if (sessionIsRunning) {
-          reconciledFreeJob = {
-            ...reconciledFreeJob,
-            running: true,
-          };
-        } else {
-          reconciledFreeJob = {
-            ...reconciledFreeJob,
-            running: false,
-            sessionId: null,
-            startTime: null,
-          };
-        }
-      }
-
-      setFreeJob(reconciledFreeJob);
-
-      const hasSomething =
-        draft.productionLog?.length ||
-        draft.defectLog?.length ||
-        draft.downtimes?.length ||
-        draft.activeDowntime;
-
-      if (hasSomething) {
-        message.info(
-          "Restored your unsaved shift entry from this browser"
-        );
-      }
-    }
-
-    setDraftLoaded(true);
-  };
-
-  hydrateDraft();
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [user?.email, draftLoaded]);
+    hydrateDraft();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email, draftLoaded, activeShift?._id]);
 
   useEffect(() => {
     if (!user?.email || !draftLoaded) return; // don't overwrite a real draft with blank initial state before hydration runs
-      saveDraft(user.email, {
-        productionLog, defectLog, consumableLog, downtimes, activeDowntime,
-        lineJobs, freeJob, selectedModelId, currentPartQtys, activeLineIdx, lineQty,
-        requiredManpower, availableManpower, savedAt: new Date().toISOString(),
-        shiftId: String(activeShift?._id || ""),
-        shiftDate: dayjs().format("YYYY-MM-DD"),
-      });
-
-    /* ════════════════════════════════════════════════════════
-      AUTO-RESET ON SHIFT COMPLETION / ROLLOVER
-    ════════════════════════════════════════════════════════ */
-    const activeShiftIdRef = useRef(activeShift?._id ? String(activeShift._id) : null);
-
-    useEffect(() => {
-      if (!activeShift?._id) return;
-      const currentShiftId = String(activeShift._id);
-
-      // If active shift changed (previous shift ended, new shift started)
-      if (activeShiftIdRef.current && activeShiftIdRef.current !== currentShiftId) {
-        setProductionLog([]);
-        setDefectLog([]);
-        setConsumableLog([]);
-        setDowntimes([]);
-        setActiveDowntime(null);
-        setLineJobs({});
-        setFreeJob({ startTime: null, running: false, sessionId: null });
-        setSelectedModelId(null);
-        setCurrentModelParts([]);
-        setCurrentPartQtys({});
-        setRequiredManpower(0);
-        setAvailableManpower(0);
-        setActiveLineIdx(0);
-        setLineQty(0);
-        setDefectForm({ modelId: null, partId: null, defectType: null, defectTypeId: null, quantity: 0 });
-        setDefectModelParts([]);
-        clearDraft(user?.email);
-        message.info(`Previous shift completed. Entry form reset for ${activeShift.shiftName}.`);
-      }
-
-      activeShiftIdRef.current = currentShiftId;
-    }, [activeShift?._id, activeShift?.shiftName, user?.email]);
+    saveDraft(user.email, {
+      productionLog, defectLog, consumableLog, downtimes, activeDowntime,
+      lineJobs, freeJob, selectedModelId, currentPartQtys, activeLineIdx, lineQty,
+      requiredManpower, availableManpower, savedAt: new Date().toISOString(),
+      shiftId: String(activeShift?._id || ""),
+      shiftDate: dayjs().format("YYYY-MM-DD"),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     productionLog, defectLog, consumableLog, downtimes, activeDowntime,
     lineJobs, freeJob, selectedModelId, currentPartQtys, activeLineIdx, lineQty,
-    requiredManpower, availableManpower, user?.email, draftLoaded,
+    requiredManpower, availableManpower, user?.email, draftLoaded, activeShift?._id,
   ]);
+
+  /* ════════════════════════════════════════════════════════
+    AUTO-RESET ON SHIFT COMPLETION / ROLLOVER
+  ════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (!activeShift?._id) return;
+    const currentShiftId = String(activeShift._id);
+
+    // If active shift changed (previous shift ended, new shift started)
+    if (activeShiftIdRef.current && activeShiftIdRef.current !== currentShiftId) {
+      setProductionLog([]);
+      setDefectLog([]);
+      setConsumableLog([]);
+      setDowntimes([]);
+      setActiveDowntime(null);
+      setLineJobs({});
+      setFreeJob({ startTime: null, running: false, sessionId: null });
+      setSelectedModelId(null);
+      setCurrentModelParts([]);
+      setCurrentPartQtys({});
+      setRequiredManpower(0);
+      setAvailableManpower(0);
+      setActiveLineIdx(0);
+      setLineQty(0);
+      setDefectForm({ modelId: null, partId: null, defectType: null, defectTypeId: null, quantity: 0 });
+      setDefectModelParts([]);
+      clearDraft(user?.email);
+      message.info(`Previous shift completed. Entry form reset for ${activeShift.shiftName}.`);
+    }
+
+    activeShiftIdRef.current = currentShiftId;
+  }, [activeShift?._id, activeShift?.shiftName, user?.email]);
 
 
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
@@ -1118,6 +1040,30 @@ export default function UserProductionPage() {
     setCurrentPartQtys((prev) => ({ ...prev, [partId]: qty || 0 }));
   };
 
+  /* ── auto-save parts to DB while session is running (for Live Analysis) ── */
+  useEffect(() => {
+    if (!freeJob.sessionId || !freeJob.running) return;
+    const anyQty = currentModelParts.some((p) => (currentPartQtys[p._id] || 0) > 0);
+    if (!anyQty) return;
+
+    const timer = setTimeout(async () => {
+      const parts = currentModelParts
+        .filter((p) => (currentPartQtys[p._id] || 0) > 0)
+        .map((p) => ({
+          partId: p._id,
+          partName: p.partName || p.name,
+          quantity: currentPartQtys[p._id] || 0,
+        }));
+      try {
+        await API.put(`/production-sessions/${freeJob.sessionId}/parts`, { parts });
+      } catch (_) {
+        // silent — background sync, not user-triggered
+      }
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [currentPartQtys, freeJob.sessionId, freeJob.running, currentModelParts]);
+
   const handleStartFreeJob = async () => {
     if (!selectedModelId) { message.error("Select a model first"); return; }
     if (!activeShift?._id) { message.error("No active shift available"); return; }
@@ -1149,7 +1095,46 @@ export default function UserProductionPage() {
   const freeJobSeconds = freeJob.running
     ? Math.max(now.diff(dayjs(freeJob.startTime), "second") - downtimeOverlapSeconds(freeJob.startTime, now), 0) : 0;
 
+
   const freeJobPaused = freeJob.running && !!activeDowntime;
+
+  /* ── Orphaned session recovery ─────────────────────────────────────
+     These are sessions that are "Running" on the server but the UI no
+     longer has a reference to them (e.g. page was closed mid-job).
+     The operator must either complete them (qty=0, clears the lock)
+     or cancel them before they can start the same model again.
+  ──────────────────────────────────────────────────────────────────── */
+
+  const handleCompleteOrphanedSession = async (sessionId) => {
+    setRecoveringSessionId(sessionId);
+    try {
+      await API.put(`/production-sessions/${sessionId}/complete`, {
+        parts: [],
+        endTime: new Date().toISOString(),
+      });
+      message.success("Session completed (0 qty). You can now start a new job for this model.");
+      setOrphanedSessions((prev) => prev.filter((s) => String(s._id) !== String(sessionId)));
+    } catch (err) {
+      message.error(err?.response?.data?.message || "Failed to complete session");
+    } finally {
+      setRecoveringSessionId(null);
+    }
+  };
+
+  const handleCancelOrphanedSession = async (sessionId) => {
+    setRecoveringSessionId(sessionId);
+    try {
+      await API.put(`/production-sessions/${sessionId}/cancel`, {
+        reason: "Orphaned session cancelled by operator",
+      });
+      message.success("Session cancelled. You can now start a new job for this model.");
+      setOrphanedSessions((prev) => prev.filter((s) => String(s._id) !== String(sessionId)));
+    } catch (err) {
+      message.error(err?.response?.data?.message || "Failed to cancel session");
+    } finally {
+      setRecoveringSessionId(null);
+    }
+  };
 
   const handleAddProductionRow = async () => {
     if (!selectedModelId) { message.error("Please select a model first"); return; }
@@ -2065,6 +2050,71 @@ export default function UserProductionPage() {
             </div>
           </div>
         </Modal>
+
+        {/* ─── ORPHANED SESSIONS RECOVERY BANNER ─────────────────
+             Shown when the server has Running sessions that the UI
+             lost track of (e.g. page was closed mid-job).
+             Operator must complete or cancel each one before they
+             can start the same model again.
+        ──────────────────────────────────────────────────────── */}
+        {orphanedSessions.length > 0 && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 shadow-sm">
+            <div className="flex items-start gap-2 mb-2">
+              <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="text-sm font-bold text-amber-800">
+                  {orphanedSessions.length === 1 ? "1 session" : `${orphanedSessions.length} sessions`} still running from a previous visit
+                </div>
+                <div className="text-[11px] text-amber-700 mt-0.5">
+                  The page was closed or refreshed before completing these jobs.
+                  Click <strong>Complete (0 qty)</strong> to close the session cleanly, or <strong>Cancel</strong> to discard it.
+                  Either option will unlock the model so you can start a new job.
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2 mt-2">
+              {orphanedSessions.map((s) => {
+                const modelName = s.modelId?.modelName || s.modelName || "Unknown Model";
+                const startedAt = s.startTime ? dayjs(s.startTime).format("HH:mm") : "—";
+                const elapsed = s.startTime
+                  ? formatHM(Math.max(dayjs().diff(dayjs(s.startTime), "minute"), 0))
+                  : "—";
+                const isBusy = recoveringSessionId === String(s._id);
+                return (
+                  <div key={s._id} className="flex flex-wrap items-center justify-between gap-2 bg-white border border-amber-200 rounded-lg px-3 py-2">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800">{modelName}</span>
+                      <span className="text-[10px] text-slate-500 ml-2">
+                        Started {startedAt} · Running {elapsed}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="small"
+                        loading={isBusy}
+                        disabled={!!recoveringSessionId && !isBusy}
+                        onClick={() => handleCompleteOrphanedSession(String(s._id))}
+                        className="!rounded-lg !text-[11px] !font-semibold !text-green-700 !border-green-300 !bg-green-50"
+                      >
+                        Complete (0 qty)
+                      </Button>
+                      <Button
+                        size="small"
+                        danger
+                        loading={isBusy}
+                        disabled={!!recoveringSessionId && !isBusy}
+                        onClick={() => handleCancelOrphanedSession(String(s._id))}
+                        className="!rounded-lg !text-[11px] !font-semibold"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ─── 2. PRODUCTION ENTRY ──────────────────────── */}
         <div className={CARD}>

@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 
 import ProductionSession from "../models/productionSession.model.js";
+import ProductionEntry from "../models/production.model.js";
 import Shift from "../models/shift.model.js";
 import Plant from "../models/plants.model.js";
 import ConveyorStrength from "../models/ConveyorStrength.model.js";
@@ -75,13 +76,26 @@ const getSessionQuantity = (session) => {
   return 0;
 };
 
-const getSessionDowntime = (session) => {
-  if (session?.totalDowntime !== undefined) return num(session.totalDowntime);
-  if (session?.downtimeMinutes !== undefined) return num(session.downtimeMinutes);
-
-  if (Array.isArray(session?.downtimes)) {
-    return session.downtimes.reduce((sum, item) => sum + num(item.duration || item.durationMinutes), 0);
+const getSessionDowntime = (session, now = new Date()) => {
+  if (Array.isArray(session?.downtimes) && session.downtimes.length > 0) {
+    return session.downtimes.reduce((sum, item) => {
+      if (item.duration !== undefined && item.duration !== null && item.duration > 0) {
+        return sum + num(item.duration);
+      }
+      if (item.durationMinutes !== undefined && item.durationMinutes !== null && item.durationMinutes > 0) {
+        return sum + num(item.durationMinutes);
+      }
+      const dStart = safeDate(item.startTime);
+      if (dStart) {
+        const dEnd = safeDate(item.endTime) || now;
+        return sum + Math.max(Math.round((dEnd.getTime() - dStart.getTime()) / 60000), 0);
+      }
+      return sum;
+    }, 0);
   }
+
+  if (session?.downtimeMinutes !== undefined && session?.downtimeMinutes !== null) return num(session.downtimeMinutes);
+  if (session?.totalDowntime !== undefined && session?.totalDowntime !== null) return num(session.totalDowntime);
 
   return 0;
 };
@@ -383,7 +397,10 @@ export const getLiveSessions = async ({ locationId, plantId, shiftId, conveyorId
 
   filter.startTime = { $gte: selectedDate, $lt: nextDate };
 
-  return ProductionSession.find(filter).sort({ startTime: 1, createdAt: 1 }).lean();
+  return ProductionSession.find(filter)
+    .populate({ path: "downtimes.downtimeTypeId", select: "name type" })
+    .sort({ startTime: 1, createdAt: 1 })
+    .lean();
 };
 
 /* ============================================================
@@ -430,7 +447,7 @@ export const calculateLiveSessionPerformance = (session, now = new Date()) => {
     effectiveEndTime
   );
 
-  const downtimeMinutes = getSessionDowntime(session);
+  const downtimeMinutes = getSessionDowntime(session, now);
 
   const runningMinutes = calculateDowntimeAdjustedMinutes(
     startTime,
@@ -893,7 +910,7 @@ export const getLiveAnalysis = async ({
   );
 
   const totalDowntime = sessions.reduce(
-    (sum, session) => sum + getSessionDowntime(session),
+    (sum, session) => sum + getSessionDowntime(session, now),
     0
   );
 
@@ -903,11 +920,10 @@ export const getLiveAnalysis = async ({
 
     if (!start) return sum;
 
-
     return sum + calculateDowntimeAdjustedMinutes(
-    start,
-    end,
-    getSessionDowntime(session)
+      start,
+      end,
+      getSessionDowntime(session, now)
     );
   }, 0);
 
@@ -953,16 +969,37 @@ export const getLiveAnalysis = async ({
     currentBlock,
 
     currentSession: currentSession
-      ? {
-          sessionId: currentSession._id,
-          modelId: currentSession.modelId || null,
-          modelName:
-            currentSession.modelName ||
-            currentSession.model?.modelName ||
-            "Unknown Model",
-          status: currentSession.status,
-          performance: currentSessionPerformance,
-        }
+      ? (() => {
+          // Find any open (active) downtime entry in the session
+          const openDowntime = Array.isArray(currentSession.downtimes)
+            ? currentSession.downtimes.find((d) => !d.endTime || d.endTime === null)
+            : null;
+          return {
+            sessionId: currentSession._id,
+            modelId: currentSession.modelId || null,
+            modelName:
+              currentSession.modelName ||
+              currentSession.model?.modelName ||
+              "Unknown Model",
+            status: currentSession.status,
+            performance: currentSessionPerformance,
+            // Expose active/live downtime info so UI can show type + running timer
+            activeDowntime: openDowntime
+              ? {
+                  type: openDowntime.type,
+                  downtimeTypeId: openDowntime.downtimeTypeId,
+                  downtimeReason:
+                    openDowntime.downtimeTypeId?.name ||
+                    openDowntime.remark ||
+                    "",
+                  startTime: openDowntime.startTime,
+                  elapsedMinutes: openDowntime.startTime
+                    ? Math.max(Math.round((now.getTime() - new Date(openDowntime.startTime).getTime()) / 60000), 0)
+                    : 0,
+                }
+              : null,
+          };
+        })()
       : null,
 
     summary: {

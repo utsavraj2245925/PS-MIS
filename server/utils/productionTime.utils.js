@@ -207,7 +207,7 @@ export const calculateDowntimeOverlap = ({ startTime, endTime, downtimes = [] })
    DOWNTIME BREAKDOWN
 ========================================================= */
 
-export const calculateDowntimeBreakdown = ({ startTime, endTime, downtimes = [] }) => {
+export const calculateDowntimeBreakdown = ({ startTime, endTime, downtimes = [], now = new Date() }) => {
     const start = new Date(startTime);
     const end = new Date(endTime);
 
@@ -216,7 +216,11 @@ export const calculateDowntimeBreakdown = ({ startTime, endTime, downtimes = [] 
 
     downtimes.forEach((item) => {
         const itemStart = new Date(item.startTime);
-        const itemEnd = new Date(item.endTime);
+        // If endTime is null/missing, this is a live active downtime — use current time
+        const itemEnd = item.endTime ? new Date(item.endTime) : now;
+
+        if (!itemStart || isNaN(itemStart.getTime())) return;
+        if (isNaN(itemEnd.getTime())) return;
 
         const overlapStart = Math.max(start.getTime(), itemStart.getTime());
         const overlapEnd = Math.min(end.getTime(), itemEnd.getTime());
